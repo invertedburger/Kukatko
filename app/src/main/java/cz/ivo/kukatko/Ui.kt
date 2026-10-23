@@ -66,6 +66,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Border
 import androidx.tv.material3.Button
+import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ListItem
 import androidx.tv.material3.ListItemBorder
 import androidx.tv.material3.ListItemDefaults
@@ -94,6 +95,10 @@ private object Look {
     val Focus = Color(0xFFFFD400)
     val OnFocus = Color.Black
     val Selected = Color(0xFF333333)
+    /** Favourite channels and shows (picked automatically from what is watched). */
+    val Favourite = Color(0xFF1B5E20)
+    val FavouriteSelected = Color(0xFF2E7D32)
+    val FavouriteDim = Color(0xFF12361A)
     val Live = Color(0xFFFF4D4D)
     val Progress = Color(0xFF42A5F5)
     val Track = Color(0x66FFFFFF)
@@ -106,17 +111,18 @@ private object Look {
     val Hint = 20.sp
 }
 
+/** [favourite] rows are green; focus is yellow on every row. */
 @Composable
-private fun rowColors() = ListItemDefaults.colors(
-    containerColor = Color.Transparent,
+private fun rowColors(favourite: Boolean = false) = ListItemDefaults.colors(
+    containerColor = if (favourite) Look.Favourite else Color.Transparent,
     contentColor = Look.Text,
     focusedContainerColor = Look.Focus,
     focusedContentColor = Look.OnFocus,
-    selectedContainerColor = Look.Selected,
+    selectedContainerColor = if (favourite) Look.FavouriteSelected else Look.Selected,
     selectedContentColor = Look.Text,
     focusedSelectedContainerColor = Look.Focus,
     focusedSelectedContentColor = Look.OnFocus,
-    disabledContainerColor = Color.Transparent,
+    disabledContainerColor = if (favourite) Look.FavouriteDim else Color.Transparent,
     disabledContentColor = Look.Disabled,
 )
 
@@ -158,30 +164,36 @@ private fun WatchScreen(state: TvState, player: ExoPlayer) {
             .focusRequester(focus)
             .focusable()
             // Mouse / touch: a click on the picture opens the channel list.
-            .pointerInput(Unit) { detectTapGestures { state.listOpen = true } }
+            .pointerInput(Unit) { detectTapGestures { state.openList() } }
             .onPreviewKeyEvent { event ->
-                if (state.listOpen) return@onPreviewKeyEvent false
                 val code = event.nativeKeyEvent.keyCode
+                // CH+/− switch live channels from anywhere and close whatever is open: always the way back to live TV.
+                if (code == KeyEvent.KEYCODE_CHANNEL_UP || code == KeyEvent.KEYCODE_CHANNEL_DOWN) {
+                    if (event.type == KeyEventType.KeyDown) {
+                        state.closeGuide()
+                        state.listOpen = false
+                        state.zap(if (code == KeyEvent.KEYCODE_CHANNEL_UP) 1 else -1)
+                    }
+                    return@onPreviewKeyEvent true
+                }
+                if (state.listOpen) return@onPreviewKeyEvent false
                 // OK opens the list on key *up*: opening it on key down would hand the key-up to the
                 // freshly focused channel row, which "clicks" it and closes the list again.
                 if (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_GUIDE) {
                     if (event.type == KeyEventType.KeyDown) okPressed = true
                     else if (event.type == KeyEventType.KeyUp && okPressed) {
                         okPressed = false
-                        state.listOpen = true
+                        state.openList()
                     }
                     return@onPreviewKeyEvent true
                 }
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (code) {
-                    KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_CHANNEL_UP -> state.zap(1)
-                    KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN -> state.zap(-1)
-                    // In a recording Left/Right skip 30 s. On live TV Right means "archive", as everywhere else.
+                    KeyEvent.KEYCODE_DPAD_UP -> state.zap(1)
+                    KeyEvent.KEYCODE_DPAD_DOWN -> state.zap(-1)
+                    // In a recording Left/Right skip 30 s. On live TV they only show the banner: no screen opens by surprise.
                     KeyEvent.KEYCODE_DPAD_LEFT -> if (state.archive != null) state.seek(-30_000) else state.showBanner()
-                    KeyEvent.KEYCODE_DPAD_RIGHT -> if (state.archive != null) state.seek(30_000) else state.current?.let {
-                        state.listOpen = true
-                        state.openGuide(it)
-                    }
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> if (state.archive != null) state.seek(30_000) else state.showBanner()
                     KeyEvent.KEYCODE_MEDIA_REWIND -> state.seek(-300_000)
                     KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> state.seek(300_000)
                     KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE,
@@ -243,7 +255,7 @@ private fun WatchScreen(state: TvState, player: ExoPlayer) {
         if (state.listOpen) {
             val guideOpen = state.guideChannel != null
             Row(Modifier.align(Alignment.CenterStart).fillMaxHeight().then(if (guideOpen) Modifier.fillMaxWidth() else Modifier)) {
-                ChannelList(state, Modifier.width(if (guideOpen) 360.dp else 540.dp))
+                ChannelList(state, Modifier.width(if (guideOpen) 500.dp else 820.dp))
                 state.guideChannel?.let { GuidePanel(state, it, Modifier.weight(1f)) }
             }
         }
@@ -260,7 +272,14 @@ private fun WatchScreen(state: TvState, player: ExoPlayer) {
 private fun ChannelList(state: TvState, modifier: Modifier) {
     // The channel that should hold focus: the current one, or the one whose guide was last opened.
     var focusId by remember { mutableStateOf(state.guideChannel?.id ?: state.current?.id) }
-    val focusIndex = state.channels.indexOfFirst { it.id == focusId }.coerceAtLeast(0)
+    // "Moje kanály" (picked by watch time) on top, the rest below; one plain list until there are any.
+    val rows: List<Any> = remember(state.channels, state.favourites) {
+        val mine = state.channels.filter { it.id in state.favourites }
+        if (mine.isEmpty()) state.channels
+        else listOf("Moje kanály") + mine + "Ostatní kanály" + state.channels.filter { it.id !in state.favourites }
+    }
+    val focusIndex = rows.indexOfFirst { it is Channel && it.id == focusId }
+        .takeIf { it >= 0 } ?: rows.indexOfFirst { it is Channel }.coerceAtLeast(0)
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = (focusIndex - 2).coerceAtLeast(0))
     val currentFocus = remember { FocusRequester() }
     val now = System.currentTimeMillis() / 1000
@@ -286,61 +305,110 @@ private fun ChannelList(state: TvState, modifier: Modifier) {
             contentPadding = PaddingValues(vertical = 16.dp, horizontal = 10.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            itemsIndexed(state.channels, key = { _, ch -> ch.id }) { index, channel ->
-                val programme = state.nowPlaying[channel.id]
-                var focused by remember { mutableStateOf(false) }
-                ListItem(
-                    selected = channel.id == state.current?.id,
-                    onClick = {
-                        state.listOpen = false
-                        state.closeGuide()
-                        if (channel.id != state.current?.id || state.archive != null) state.play(channel)
-                    },
-                    onLongClick = { focusId = channel.id; state.openGuide(channel) },
-                    colors = rowColors(),
-                    shape = rowShape(),
-                    border = rowBorder(focused),
-                    scale = rowScale(),
-                    modifier = (if (index == focusIndex) Modifier.focusRequester(currentFocus) else Modifier)
-                        .onFocusChanged { focused = it.isFocused }
-                        .onPreviewKeyEvent {
-                            // Right opens this channel's guide (archive) next to the list.
-                            if (it.type == KeyEventType.KeyDown && it.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
-                                focusId = channel.id
-                                state.openGuide(channel)
-                                true
-                            } else false
-                        },
-                    leadingContent = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("${channel.number}", fontSize = Look.Name, fontWeight = FontWeight.Bold, modifier = Modifier.width(48.dp))
-                            if (!guideOpen) {
-                                AsyncImage(model = channel.logo, contentDescription = null, modifier = Modifier.size(width = 72.dp, height = 44.dp))
-                            }
-                        }
-                    },
-                    headlineContent = {
-                        Text(channel.name, fontSize = Look.Name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    },
-                    supportingContent = programme?.takeIf { !guideOpen }?.let {
-                        {
-                            Column {
-                                Text(it.title, fontSize = Look.Body, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Progress(it.progress(now), LocalContentColor.current)
-                            }
-                        }
-                    },
-                    // Say on the highlighted row what Right does.
-                    trailingContent = if (focused && !guideOpen) {
-                        { Text("→ Archiv", fontSize = Look.Body, fontWeight = FontWeight.Bold) }
-                    } else null,
-                )
+            itemsIndexed(rows, key = { _, row -> if (row is Channel) row.id else "header $row" }) { index, row ->
+                if (row is String) {
+                    Text(row, fontSize = Look.Name, fontWeight = FontWeight.Bold, color = Look.Focus, modifier = Modifier.padding(start = 12.dp, top = 16.dp, bottom = 4.dp))
+                } else if (row is Channel) {
+                    ChannelRow(
+                        state, row, compact = guideOpen, now = now,
+                        modifier = if (index == focusIndex) Modifier.focusRequester(currentFocus) else Modifier,
+                        openGuide = { focusId = row.id; state.openGuide(row) },
+                    )
+                }
             }
         }
-        if (!guideOpen) HintBar("OK" to "Přepnout", "→" to "Archiv", "Zpět" to "Zavřít")
+        if (!guideOpen) HintBar("OK" to "Sledovat", "→" to "Další volby", "Zpět" to "Zavřít")
     }
     // On open, and again when the guide closes, focus goes back to the channel row.
     LaunchedEffect(state.guideChannel) { if (state.guideChannel == null) runCatching { currentFocus.requestFocus() } }
+}
+
+/**
+ * A channel in the list: OK on the row plays it live. The highlighted row shows its other choices as
+ * buttons beside it (Right reaches them), so nothing is hidden behind a direction or a long press.
+ * [compact] is the list next to an open guide: the row looks the same, but has no buttons and Right shows
+ * this channel's programmes.
+ */
+@Composable
+private fun ChannelRow(state: TvState, channel: Channel, compact: Boolean, now: Long, modifier: Modifier, openGuide: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    var focusWithin by remember { mutableStateOf(false) }
+    val rowFocus = remember { FocusRequester() }
+    val programme = state.nowPlaying[channel.id]
+    Row(
+        Modifier.onFocusChanged { focusWithin = it.hasFocus },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        ListItem(
+            selected = channel.id == state.current?.id,
+            onClick = {
+                state.listOpen = false
+                state.closeGuide()
+                if (channel.id != state.current?.id || state.archive != null) state.play(channel)
+            },
+            colors = rowColors(favourite = channel.id in state.favourites),
+            shape = rowShape(),
+            border = rowBorder(focused),
+            scale = rowScale(),
+            modifier = modifier
+                .weight(1f)
+                .focusRequester(rowFocus)
+                .onFocusChanged { focused = it.isFocused }
+                .onPreviewKeyEvent {
+                    if (compact && it.type == KeyEventType.KeyDown && it.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                        openGuide(); true
+                    } else false
+                },
+            leadingContent = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("${channel.number}", fontSize = Look.Name, fontWeight = FontWeight.Bold, modifier = Modifier.width(48.dp))
+                    AsyncImage(model = channel.logo, contentDescription = null, modifier = Modifier.size(width = 72.dp, height = 44.dp))
+                }
+            },
+            headlineContent = {
+                Text(channel.name, fontSize = Look.Name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            },
+            supportingContent = programme?.let {
+                {
+                    Column {
+                        Text((if (it.title in state.favouriteShows) "★ " else "") + it.title, fontSize = Look.Body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Progress(it.progress(now), LocalContentColor.current)
+                    }
+                }
+            },
+        )
+        if (focusWithin && !compact) {
+            if (programme?.payload != null) {
+                RowButton("⏮ Od začátku") {
+                    state.listOpen = false
+                    state.startOver(channel)
+                }
+            }
+            RowButton("Zmeškané pořady") {
+                // Hand focus back to the row before the buttons disappear; the guide then takes it.
+                runCatching { rowFocus.requestFocus() }
+                openGuide()
+            }
+        }
+    }
+}
+
+@Composable
+private fun RowButton(label: String, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        shape = ButtonDefaults.shape(shape = Look.Shape),
+        colors = ButtonDefaults.colors(
+            containerColor = Look.Selected,
+            contentColor = Look.Text,
+            focusedContainerColor = Look.Focus,
+            focusedContentColor = Look.OnFocus,
+        ),
+        scale = ButtonDefaults.scale(focusedScale = 1.05f),
+    ) {
+        Text(label, fontSize = Look.Body, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+    }
 }
 
 @Composable
@@ -399,7 +467,7 @@ private fun GuidePanel(state: TvState, channel: Channel, modifier: Modifier) {
                                         state.playArchive(row)
                                     }
                                 },
-                                colors = rowColors(),
+                                colors = rowColors(favourite = row.title in state.favouriteShows),
                                 shape = rowShape(),
                                 border = rowBorder(focused),
                                 scale = rowScale(),
@@ -426,7 +494,7 @@ private fun GuidePanel(state: TvState, channel: Channel, modifier: Modifier) {
                 LaunchedEffect(items) { runCatching { nowFocus.requestFocus() } }
             }
         }
-        HintBar("↑ ↓" to "Pořady", "OK" to "Přehrát", "←" to "Kanály", "Zpět" to "Zavřít")
+        HintBar("OK" to "Přehrát", "←" to "Kanály", "Zpět" to "Zavřít")
     }
 }
 
@@ -522,8 +590,7 @@ private fun Banner(channel: Channel, programme: Programme?, modifier: Modifier) 
             }
             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                 KeyHint("↑ ↓", "Přepnout")
-                KeyHint("OK", "Kanály")
-                KeyHint("→", "Archiv")
+                KeyHint("OK", "Kanály a zmeškané pořady")
             }
         }
     }
@@ -548,7 +615,8 @@ private fun ArchiveBanner(channel: Channel, programme: Programme, player: ExoPla
         AsyncImage(model = channel.logo, contentDescription = null, modifier = Modifier.size(width = 110.dp, height = 66.dp))
         Spacer(Modifier.width(24.dp))
         Column(Modifier.weight(1f)) {
-            Text("ZE ZÁZNAMU · ${channel.name} · $date", fontSize = Look.Body, fontWeight = FontWeight.Bold, color = Look.Focus)
+            val onAir = programme.end > System.currentTimeMillis() / 1000
+            Text("${if (onAir) "OD ZAČÁTKU" else "ZE ZÁZNAMU"} · ${channel.name} · $date", fontSize = Look.Body, fontWeight = FontWeight.Bold, color = Look.Focus)
             Text((if (paused) "⏸  POZASTAVENO – " else "") + programme.title, fontSize = Look.Big, fontWeight = FontWeight.Bold, color = Look.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(clock(position), fontSize = Look.Body, color = Look.Text)

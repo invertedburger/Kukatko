@@ -12,30 +12,34 @@ Needs developer options + network debugging on the TV.
 - Start-up speed to the last channel on the `release` build.
 - Device slots in the Oneplay account stay under the limit after repeated logins.
 
-## 2. Simpler UI for an elderly viewer (proposal, not started)
+## 2. Simpler UI for an elderly viewer
 
 They watch live TV, missed programmes and favourite shows, using only the arrows, OK, Back and
 CH+/−; no colour buttons. Rules: one key means one thing everywhere, no hidden directions or
 long presses, everything you can do is a visible button.
 
+**Done (branch `ui-simple`):** CH+/− from anywhere, Left/Right on live TV only show the banner,
+visible row buttons *Od začátku* / *Zmeškané pořady*, automatic favourite channels and shows (green),
+channel rows look the same next to the guide. **Still to do:** the items marked *(todo)* below.
+
 - **CH+/− always switch live channels**, from anywhere: in a menu, a list or a recording. That
   makes it the way back to live TV. Up/Down do the same while watching live TV.
-- **OK on live TV opens a home menu** with three big tiles: *Kanály* · *Zmeškané pořady* ·
+- *(todo)* **OK on live TV opens a home menu** with three big tiles: *Kanály* · *Zmeškané pořady* ·
   *Moje pořady* (plus *Pokračovat* when a recording was left unfinished).
 - **Left/Right on live TV only show the info banner**; they open no other screen.
-- **Kanály**: favourite channels only (set up from the PC / HA, not with the remote). Each row has
-  visible buttons `▶ Sledovat` · `⏮ Od začátku` · `📅 Zmeškané`; Right moves between them.
+- **Kanály**: favourite channels on top, picked automatically by watch time, green. OK on the row plays
+  it; the highlighted row shows buttons `⏮ Od začátku` · `Zmeškané pořady`, Right moves to them.
   *Od začátku* plays the running programme from the archive.
-- **Zmeškané pořady**: channel → day tiles (*Dnes · Včera · Út 21. 10. …*) → that day's
+- *(todo)* **Zmeškané pořady**: channel → day tiles (*Dnes · Včera · Út 21. 10. …*) → that day's
   programmes only, focus on the evening (on now for today).
-- **Moje pořady**: a short list of favourite shows; each opens its episodes from the last 7 days
+- *(todo)* **Moje pořady**: a short list of favourite shows; each opens its episodes from the last 7 days
   across all channels, newest first. Needs the 7-day guide of the favourite channels indexed in
-  the background (same index as `/search` below). A show is added with `☆ Přidat do Mých pořadů`
-  on any archive programme, or from the PC / HA.
-- **Playing a recording**: an on-screen bar with big buttons `⏪ 5 min` `⏯` `⏩ 5 min`
+  the background (same index as `/search` below). Favourite shows are already detected
+  automatically (watched on 2 days), so no adding by hand.
+- *(todo)* **Playing a recording**: an on-screen bar with big buttons `⏪ 5 min` `⏯` `⏩ 5 min`
   `📺 Živě`; Left/Right move along it, OK presses. Back asks "Vrátit se na živé vysílání?".
   The position is remembered (*Pokračovat od 21:14*).
-- **Feedback**: large "Přepínám na ČT1…" with number and logo while loading; panels close by
+- *(todo)* **Feedback**: large "Přepínám na ČT1…" with number and logo while loading; panels close by
   themselves after ~30 s without a key press.
 
 ## 3. Control and state for Home Assistant / voice / AI

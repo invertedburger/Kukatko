@@ -126,4 +126,36 @@ for (const ch of channels.slice(0, 5)) {
         console.log(`   ${ch.name.padEnd(20)} ${e.message}`);
     }
 }
+// node tools/probe.mjs startover: can a programme that is on air now be played from its beginning?
+if (process.argv.includes('startover')) {
+    step('start over: programme on air now');
+    for (const ch of channels.slice(0, 5)) {
+        const row = epg.schedule.find(c => c.channelId === ch.id);
+        const item = row?.items?.find(i => new Date(i.startAt) <= now && new Date(i.endAt) > now);
+        const action = item?.actions?.[0];
+        if (!item) { console.log(`   ${ch.name.padEnd(20)} nothing on air`); continue; }
+        let verdict = `action ${action?.call ?? 'none'}`;
+        if (action?.call === 'page.content.display') {
+            try {
+                const page = await call('page.content.display', action.params.payload);
+                const header = page.layout?.blocks?.find(b => b.schema === 'ContentHeaderBlock');
+                const main = header?.mainAction?.action;
+                verdict += ` -> main ${main?.call ?? 'none'} "${header?.mainAction?.label ?? ''}"`;
+                if (main?.call === 'content.play') {
+                    const play = await call('content.play', main.params.payload, { playbackCapabilities: capabilities });
+                    const assets = play.media?.stream?.assets ?? [];
+                    verdict += ` -> ${assets.map(a => a.protocol + (a.drm ? '+drm' : '')).join(', ') || 'no media'}`;
+                    verdict += `, control ${Object.keys(play.playerControl ?? {}).join('/')}`;
+                }
+            } catch (e) {
+                verdict += ` -> ${e.message}`;
+            }
+        }
+        console.log(`   ${ch.name.padEnd(20)} "${item.title}" ${verdict}`);
+    }
+    const ch = channels[0];
+    const live = await call('content.play', { criteria: { schema: 'ContentCriteria', contentId: `channel.${ch.id}` }, startMode: 'start' },
+        { playbackCapabilities: { ...capabilities, liveSpecificCapabilities: capabilities } });
+    console.log(`   live ${ch.name} timeline: ${JSON.stringify(live.playerControl?.liveControl?.timeline ?? null).slice(0, 400)}`);
+}
 step('done');

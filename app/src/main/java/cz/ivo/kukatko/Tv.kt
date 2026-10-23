@@ -31,6 +31,50 @@ class Tv(context: Context) {
         get() = prefs.getString("lastChannel", null)
         set(value) = prefs.edit().putString("lastChannel", value).apply()
 
+    /**
+     * Minutes watched per channel, fading by half every 30 days: the most watched channels become
+     * "Moje kanály" by themselves, and drop out again once nobody watches them.
+     */
+    fun addWatchTime(channelId: String, minutes: Double) {
+        val scores = watchScores().toMutableMap()
+        scores[channelId] = (scores[channelId] ?: 0.0) + minutes
+        prefs.edit().putString("watch", Json.encodeToString(scores)).putLong("watchDay", today()).apply()
+    }
+
+    /** Up to 10 channels with at least 15 minutes watched (after fading), most watched first. */
+    fun favourites(): List<String> =
+        watchScores().filterValues { it >= 15 }.entries.sortedByDescending { it.value }.take(10).map { it.key }
+
+    private fun watchScores(): Map<String, Double> {
+        val scores = prefs.getString("watch", null)
+            ?.let { runCatching { Json.decodeFromString<Map<String, Double>>(it) }.getOrNull() }.orEmpty()
+        val fade = Math.pow(0.5, (today() - prefs.getLong("watchDay", today())) / 30.0)
+        return scores.mapValues { it.value * fade }
+    }
+
+    /**
+     * Minutes watched per programme title and day, live or from the archive. A show watched on 2 different
+     * days for 10 minutes or more counts as a favourite; days older than 60 are forgotten.
+     */
+    fun addShowTime(title: String, minutes: Double) {
+        val day = today()
+        val shows = showDays()
+            .mapValues { (_, days) -> days.filterKeys { it > day - 60 } }
+            .filterValues { it.isNotEmpty() }
+            .toMutableMap()
+        val days = shows[title].orEmpty().toMutableMap()
+        days[day] = (days[day] ?: 0.0) + minutes
+        shows[title] = days
+        prefs.edit().putString("shows", Json.encodeToString(shows)).apply()
+    }
+
+    fun favouriteShows(): Set<String> = showDays().filterValues { days -> days.count { it.value >= 10 } >= 2 }.keys
+
+    private fun showDays(): Map<String, Map<Long, Double>> = prefs.getString("shows", null)
+        ?.let { runCatching { Json.decodeFromString<Map<String, Map<Long, Double>>>(it) }.getOrNull() }.orEmpty()
+
+    private fun today() = System.currentTimeMillis() / 86_400_000
+
     suspend fun login(user: String, password: String) {
         val newSession = api.login(user, password)
         prefs.edit().putString("user", user).putString("password", password).apply()

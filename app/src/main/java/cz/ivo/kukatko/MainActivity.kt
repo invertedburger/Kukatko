@@ -108,6 +108,13 @@ class TvState(private val tv: Tv, private val player: ExoPlayer, private val sco
     /** Set while a past programme plays from the archive; null means live TV. */
     var archive by mutableStateOf<Programme?>(null)
     var paused by mutableStateOf(false)
+    /**
+     * The most watched channels lately, picked automatically. Recomputed when the channel list opens,
+     * so rows don't jump around while it is on screen.
+     */
+    var favourites by mutableStateOf(tv.favourites().toSet())
+    /** Programme titles watched on several days, also picked automatically; shown green in the guide. */
+    var favouriteShows by mutableStateOf(tv.favouriteShows())
 
     private var playJob: Job? = null
     private var guideJob: Job? = null
@@ -142,6 +149,21 @@ class TvState(private val tv: Tv, private val player: ExoPlayer, private val sco
                 }
             }
         })
+        // Every minute of picture counts towards the channel's place in "Moje kanály" and towards the show.
+        scope.launch {
+            while (isActive) {
+                delay(60_000)
+                if (!player.isPlaying) continue
+                current?.let { tv.addWatchTime(it.id, 1.0) }
+                (archive?.title ?: current?.let { nowPlaying[it.id]?.title })?.takeIf { it.isNotBlank() }?.let { tv.addShowTime(it, 1.0) }
+            }
+        }
+    }
+
+    fun openList() {
+        favourites = tv.favourites().toSet()
+        favouriteShows = tv.favouriteShows()
+        listOpen = true
     }
 
     fun resume() {
@@ -210,6 +232,16 @@ class TvState(private val tv: Tv, private val player: ExoPlayer, private val sco
                 .onSuccess { start(it) }
                 .onFailure { message = "${programme.title}: ${it.message}" }
         }
+    }
+
+    /** The programme on air now on [channel], from its beginning: Oneplay opens it like a recording. */
+    fun startOver(channel: Channel) {
+        val programme = nowPlaying[channel.id]?.takeIf { it.payload != null }
+        if (programme == null) {
+            message = "${channel.name}: tento pořad nejde pustit od začátku"
+            return
+        }
+        playArchive(programme)
     }
 
     private fun start(stream: Stream) {
@@ -282,9 +314,18 @@ class TvState(private val tv: Tv, private val player: ExoPlayer, private val sco
         }
     }
 
+    /**
+     * Zapping goes through "Moje kanály" once there are at least 3, in number order; the other channels
+     * stay reachable from the list and by number. From a channel outside them, the nearest one in that direction.
+     */
     private fun neighbour(channel: Channel, step: Int): Channel? {
-        if (channels.isEmpty()) return null
-        val index = channels.indexOfFirst { it.id == channel.id }.coerceAtLeast(0)
-        return channels[(index + step).mod(channels.size)]
+        val list = channels.filter { it.id in favourites }.takeIf { it.size >= 3 } ?: channels
+        if (list.isEmpty()) return null
+        val index = list.indexOfFirst { it.id == channel.id }
+        if (index < 0) {
+            return if (step > 0) list.firstOrNull { it.number > channel.number } ?: list.first()
+            else list.lastOrNull { it.number < channel.number } ?: list.last()
+        }
+        return list[(index + step).mod(list.size)]
     }
 }

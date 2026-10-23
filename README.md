@@ -8,16 +8,29 @@ Kotlin · Compose for TV · Media3 ExoPlayer (DASH; Widevine through Oneplay's l
 
 ## Remote
 
+Made for an elderly viewer: arrows, OK, Back and CH+/− are enough, every choice is a visible button.
+
 | Key | Action |
 |-----|--------|
-| Up / Down, CH+ / CH− | next / previous channel |
-| OK, Guide | channel list (Back closes) |
+| CH+ / CH− | next / previous channel, from anywhere (closes lists, leaves a recording): always back to live TV |
+| Up / Down | next / previous channel while watching |
+| OK | channel list (Back closes) |
 | Left / Right, Info | show the info banner |
 | 0–9 | jump to channel number |
-| Right on a channel in the list | its guide for the last 7 days (archive); OK plays a past programme |
+
+In the channel list OK plays the channel; Right on a row reaches its buttons **Od začátku** (the
+programme on air now, from its beginning) and **Zmeškané pořady** (its guide for the last 7 days;
+OK plays a past programme, Left goes back to the channels).
 
 While playing from the archive: Left / Right skip 30 s, Rewind / Fast-forward 5 min,
-Play/Pause or Space pauses, Back returns to live TV, Up / Down zap to live channels.
+Play/Pause or Space pauses, Back returns to live TV.
+
+**Favourites are automatic.** Every minute watched counts for the channel and the programme title
+(fading by half every 30 days). Channels with 15+ minutes become **Moje kanály**: green, on top of
+the list, and the only ones Up/Down and CH+/− go through once there are 3 or more (the rest stay in
+the list under *Ostatní kanály* and by number). A title watched 10+ minutes on 2 different days is a
+favourite show: green in the guide, ★ in the channel list. Nothing to set up; it lives in the app's
+prefs on the TV.
 
 ## API
 
@@ -35,7 +48,8 @@ The old O2 TV 2.0 Kaltura API (partner 3201) has answered `403 PARTNER BLOCKED` 
 
 Account in `%USERPROFILE%\.kukatko.env` as `O2_USER=` / `O2_PASS=` (the Oneplay login).
 
-- `node tools/probe.mjs` runs the whole flow from the PC: channels, now playing, stream types, latency.
+- `node tools/probe.mjs` runs the whole flow from the PC: channels, now playing, stream types, latency. Add
+  `startover` to check that programmes on air can be played from their beginning.
 - `tools/login.ps1` logs the app in over adb (emulator or TV), no typing with a remote.
 - `tools/type-clipboard.ps1` types the PC clipboard into the focused field over adb.
 
