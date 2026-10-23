@@ -448,6 +448,8 @@ private fun SearchScreen(state: TvState) {
     val firstResult = remember { FocusRequester() }
     // After picking a recent search, focus moves to its first result once it arrives.
     var jumpToResults by remember { mutableStateOf(false) }
+    // The OK that opened the search lets go on the "A" key; ignore key-ups until a key goes down here.
+    var armed by remember { mutableStateOf(false) }
     val now = System.currentTimeMillis() / 1000
 
     androidx.activity.compose.BackHandler { state.searchOpen = false }
@@ -456,7 +458,8 @@ private fun SearchScreen(state: TvState) {
             .fillMaxSize()
             .background(Look.Panel)
             .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent !armed
+                armed = true
                 val code = event.nativeKeyEvent.keyCode
                 when (code) {
                     in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z -> state.search(state.query + ('A' + (code - KeyEvent.KEYCODE_A)))
@@ -586,29 +589,39 @@ private fun SearchResultRow(state: TvState, hit: SearchHit, now: Long, modifier:
         leadingContent = {
             AsyncImage(model = channel?.logo, contentDescription = null, modifier = Modifier.size(width = 72.dp, height = 44.dp))
         },
-        headlineContent = { Text(hit.title, fontSize = Look.Name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        headlineContent = { Text(hit.title, fontSize = Look.Name, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 32.sp) },
         supportingContent = {
-            // When first, so it never gets cut off; the logo says the channel (its name only when there is no logo).
-            val parts = listOfNotNull(hit.start.takeIf { it > 0 }?.let { whenText(it) }, hit.detail, hit.channelName.takeIf { channel?.logo == null })
-            Text(parts.joinToString(" · "), fontSize = Look.Body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // The logo says the channel; its name only when there is no logo.
+            val parts = listOfNotNull(hit.detail, hit.channelName.takeIf { channel?.logo == null })
+            if (parts.isNotEmpty()) Text(parts.joinToString(" · "), fontSize = Look.Body, maxLines = 1, overflow = TextOverflow.Ellipsis)
         },
-        trailingContent = if (focused) {
-            { Text("▶ Přehrát", fontSize = Look.Body, fontWeight = FontWeight.Bold) }
-        } else null,
+        // When it was on, big in its own column so it is never cut off: "dnes" over "08:35".
+        trailingContent = hit.start.takeIf { it > 0 }?.let { start ->
+            {
+                val (day, time) = dayAndTime(start)
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(day, fontSize = Look.Body, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                    Text(time, fontSize = Look.Name, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                }
+            }
+        },
     )
 }
 
 /** "dnes 19:00", "včera 19:00", otherwise "čtvrtek 22. 10. 19:00". */
-private fun whenText(epochSec: Long): String {
+private fun whenText(epochSec: Long): String = dayAndTime(epochSec).let { (day, time) -> "$day $time" }
+
+/** ("dnes", "19:00"), ("včera", "19:00"), otherwise ("čtvrtek 22. 10.", "19:00"). */
+private fun dayAndTime(epochSec: Long): Pair<String, String> {
     val zone = ZoneId.systemDefault()
     val at = Instant.ofEpochSecond(epochSec).atZone(zone)
     val today = LocalDate.now(zone)
-    val time = DateTimeFormatter.ofPattern("HH:mm").format(at)
-    return when (at.toLocalDate()) {
-        today -> "dnes $time"
-        today.minusDays(1) -> "včera $time"
-        else -> DateTimeFormatter.ofPattern("EEEE d. M. HH:mm", Locale.forLanguageTag("cs")).format(at)
+    val day = when (at.toLocalDate()) {
+        today -> "dnes"
+        today.minusDays(1) -> "včera"
+        else -> DateTimeFormatter.ofPattern("EEEE d. M.", Locale.forLanguageTag("cs")).format(at)
     }
+    return day to DateTimeFormatter.ofPattern("HH:mm").format(at)
 }
 
 @Composable
