@@ -72,6 +72,12 @@ class MainActivity : ComponentActivity() {
         if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
             Log.i("Kukatko", "key ${KeyEvent.keyCodeToString(event.keyCode)} code=${event.keyCode} scan=${event.scanCode} device=${event.device?.name}")
         }
+        // Back goes straight to the screens' BackHandlers. Compose would otherwise use the first Back to move
+        // focus out of a list it was put into in code (results, guide), and Back would seem to do nothing.
+        if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+            if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) onBackPressedDispatcher.onBackPressed()
+            return true
+        }
         return super.dispatchKeyEvent(event)
     }
 
@@ -116,7 +122,15 @@ class TvState(private val tv: Tv, private val player: ExoPlayer, private val sco
     /** Programme titles watched on several days, also picked automatically; shown green in the guide. */
     var favouriteShows by mutableStateOf(tv.favouriteShows())
 
+    /** "Hledat pořad": open over the channel list (Back returns to it); [results] is null until a search ran. */
+    var searchOpen by mutableStateOf(false)
+    var query by mutableStateOf("")
+    var results by mutableStateOf<List<SearchHit>?>(null)
+    var searching by mutableStateOf(false)
+    var recentSearches by mutableStateOf(tv.recentSearches())
+
     private var playJob: Job? = null
+    private var searchJob: Job? = null
     private var guideJob: Job? = null
     private var bannerJob: Job? = null
     private var digitsJob: Job? = null
@@ -164,6 +178,45 @@ class TvState(private val tv: Tv, private val player: ExoPlayer, private val sco
         favourites = tv.favourites().toSet()
         favouriteShows = tv.favouriteShows()
         listOpen = true
+    }
+
+    fun openSearch() {
+        recentSearches = tv.recentSearches()
+        query = ""
+        results = null
+        searchOpen = true
+    }
+
+    /** Typing searches by itself once 2 letters are in, after a short pause; [now] skips the pause (a recent search). */
+    fun search(text: String, now: Boolean = false) {
+        query = text
+        searchJob?.cancel()
+        if (text.trim().length < 2) {
+            results = null
+            searching = false
+            return
+        }
+        searching = true
+        searchJob = scope.launch {
+            if (!now) delay(700)
+            results = runCatching { tv.search(text.trim()) }
+                .onFailure { message = "Hledání: ${it.message}" }
+                .getOrDefault(emptyList())
+                // The same broadcast also comes on a channel's variants (e.g. NOVA AD with audio description):
+                // keep the one on the lowest channel number.
+                .groupBy { Triple(it.title, it.detail, it.start) }.values
+                .map { same -> same.minBy { hit -> channels.firstOrNull { it.name.equals(hit.channelName, ignoreCase = true) }?.number ?: Int.MAX_VALUE } }
+            searching = false
+        }
+    }
+
+    fun playFound(hit: SearchHit) {
+        tv.rememberSearch(query.trim())
+        val channel = channels.firstOrNull { it.name.equals(hit.channelName, ignoreCase = true) }
+        searchOpen = false
+        listOpen = false
+        // The end isn't known; a past one is enough for the banner ("ZE ZÁZNAMU").
+        playArchive(Programme(channel?.id ?: current?.id.orEmpty(), hit.title, hit.start, hit.start + 1, hit.payload))
     }
 
     fun resume() {

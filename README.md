@@ -23,6 +23,12 @@ In the channel list OK plays the channel; Right on a row reaches its buttons **O
 programme on air now, from its beginning) and **Zmeškané pořady** (its guide for the last 7 days;
 OK plays a past programme, Left goes back to the channels).
 
+**Hledat pořad** (top row of the channel list) finds a show in the archive without a keyboard: big
+letters A–Z picked with the arrows and OK (Oneplay's search copes without diacritics: ULI finds
+Ulice), results after 2 letters on the right, newest first, each with channel logo, when and episode;
+OK plays it. Searches that led to watching something are kept as one-press rows (*Naposledy
+hledané*). The remote's digits and a real keyboard type too.
+
 While playing from the archive: Left / Right skip 30 s, Rewind / Fast-forward 5 min,
 Play/Pause or Space pauses, Back returns to live TV.
 

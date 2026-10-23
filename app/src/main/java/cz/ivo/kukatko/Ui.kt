@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -171,6 +172,7 @@ private fun WatchScreen(state: TvState, player: ExoPlayer) {
                 if (code == KeyEvent.KEYCODE_CHANNEL_UP || code == KeyEvent.KEYCODE_CHANNEL_DOWN) {
                     if (event.type == KeyEventType.KeyDown) {
                         state.closeGuide()
+                        state.searchOpen = false
                         state.listOpen = false
                         state.zap(if (code == KeyEvent.KEYCODE_CHANNEL_UP) 1 else -1)
                     }
@@ -252,7 +254,9 @@ private fun WatchScreen(state: TvState, player: ExoPlayer) {
                     .padding(horizontal = 20.dp, vertical = 12.dp),
             )
         }
-        if (state.listOpen) {
+        if (state.listOpen && state.searchOpen) {
+            SearchScreen(state)
+        } else if (state.listOpen) {
             val guideOpen = state.guideChannel != null
             Row(Modifier.align(Alignment.CenterStart).fillMaxHeight().then(if (guideOpen) Modifier.fillMaxWidth() else Modifier)) {
                 ChannelList(state, Modifier.width(if (guideOpen) 500.dp else 820.dp))
@@ -276,10 +280,10 @@ private fun WatchScreen(state: TvState, player: ExoPlayer) {
 private fun ChannelList(state: TvState, modifier: Modifier) {
     // The channel that should hold focus: the current one, or the one whose guide was last opened.
     var focusId by remember { mutableStateOf(state.guideChannel?.id ?: state.current?.id) }
-    // "Moje kanály" (picked by watch time) on top, the rest below; one plain list until there are any.
+    // "Hledat pořad" first, then "Moje kanály" (picked by watch time) and the rest; one plain list until there are any.
     val rows: List<Any> = remember(state.channels, state.favourites) {
         val mine = state.channels.filter { it.id in state.favourites }
-        if (mine.isEmpty()) state.channels
+        listOf(SearchEntry) + if (mine.isEmpty()) state.channels
         else listOf("Moje kanály") + mine + "Ostatní kanály" + state.channels.filter { it.id !in state.favourites }
     }
     val focusIndex = rows.indexOfFirst { it is Channel && it.id == focusId }
@@ -310,7 +314,19 @@ private fun ChannelList(state: TvState, modifier: Modifier) {
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             itemsIndexed(rows, key = { _, row -> if (row is Channel) row.id else "header $row" }) { index, row ->
-                if (row is String) {
+                if (row == SearchEntry) {
+                    var focused by remember { mutableStateOf(false) }
+                    ListItem(
+                        selected = false,
+                        onClick = { state.openSearch() },
+                        colors = rowColors(),
+                        shape = rowShape(),
+                        border = rowBorder(focused),
+                        scale = rowScale(),
+                        modifier = Modifier.onFocusChanged { focused = it.isFocused },
+                        headlineContent = { Text("🔍  Hledat pořad", fontSize = Look.Name, fontWeight = FontWeight.Bold) },
+                    )
+                } else if (row is String) {
                     Text(row, fontSize = Look.Name, fontWeight = FontWeight.Bold, color = Look.Focus, modifier = Modifier.padding(start = 12.dp, top = 16.dp, bottom = 4.dp))
                 } else if (row is Channel) {
                     ChannelRow(
@@ -399,19 +415,199 @@ private fun ChannelRow(state: TvState, channel: Channel, compact: Boolean, now: 
 }
 
 @Composable
+private fun buttonColors() = ButtonDefaults.colors(
+    containerColor = Look.Selected,
+    contentColor = Look.Text,
+    focusedContainerColor = Look.Focus,
+    focusedContentColor = Look.OnFocus,
+)
+
+@Composable
 private fun RowButton(label: String, onClick: () -> Unit) {
     Button(
         onClick = onClick,
         shape = ButtonDefaults.shape(shape = Look.Shape),
-        colors = ButtonDefaults.colors(
-            containerColor = Look.Selected,
-            contentColor = Look.Text,
-            focusedContainerColor = Look.Focus,
-            focusedContentColor = Look.OnFocus,
-        ),
+        colors = buttonColors(),
         scale = ButtonDefaults.scale(focusedScale = 1.05f),
     ) {
         Text(label, fontSize = Look.Body, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+    }
+}
+
+/** Marks the "Hledat pořad" row on top of the channel list. */
+private object SearchEntry
+
+/**
+ * "Hledat pořad" without a keyboard: big letters picked with the arrows and OK (Oneplay's search needs no
+ * diacritics, so A–Z is enough), results on the right after 2 letters, recent searches while nothing is typed.
+ * The remote's digits and a real keyboard type too. Back returns to the channel list.
+ */
+@Composable
+private fun SearchScreen(state: TvState) {
+    val firstKey = remember { FocusRequester() }
+    val firstResult = remember { FocusRequester() }
+    // After picking a recent search, focus moves to its first result once it arrives.
+    var jumpToResults by remember { mutableStateOf(false) }
+    val now = System.currentTimeMillis() / 1000
+
+    androidx.activity.compose.BackHandler { state.searchOpen = false }
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(Look.Panel)
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val code = event.nativeKeyEvent.keyCode
+                when (code) {
+                    in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z -> state.search(state.query + ('A' + (code - KeyEvent.KEYCODE_A)))
+                    in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> state.search(state.query + (code - KeyEvent.KEYCODE_0))
+                    KeyEvent.KEYCODE_SPACE -> state.search(state.query + " ")
+                    KeyEvent.KEYCODE_DEL -> state.search(state.query.dropLast(1))
+                    else -> return@onPreviewKeyEvent false
+                }
+                true
+            },
+    ) {
+        Row(Modifier.fillMaxWidth().padding(start = 40.dp, end = 40.dp, top = 20.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Hledat pořad:", fontSize = Look.Big, fontWeight = FontWeight.Bold, color = Look.Focus)
+            Spacer(Modifier.width(20.dp))
+            Text(
+                state.query + "▏",
+                fontSize = Look.Huge,
+                fontWeight = FontWeight.Bold,
+                color = Look.Text,
+                maxLines = 1,
+                modifier = Modifier.weight(1f).background(Color.Black, Look.Shape).padding(horizontal = 20.dp, vertical = 2.dp),
+            )
+        }
+        Row(Modifier.weight(1f).padding(horizontal = 30.dp), horizontalArrangement = Arrangement.spacedBy(30.dp)) {
+            LetterGrid(state, firstKey)
+            Column(Modifier.weight(1f).fillMaxHeight()) {
+                val results = state.results
+                when {
+                    state.query.trim().length < 2 && state.recentSearches.isNotEmpty() -> {
+                        SearchNote("Naposledy hledané", Look.Focus)
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            items(state.recentSearches) { recent ->
+                                var focused by remember { mutableStateOf(false) }
+                                ListItem(
+                                    selected = false,
+                                    onClick = { jumpToResults = true; state.search(recent, now = true) },
+                                    colors = rowColors(),
+                                    shape = rowShape(),
+                                    border = rowBorder(focused),
+                                    scale = rowScale(),
+                                    modifier = Modifier.onFocusChanged { focused = it.isFocused },
+                                    headlineContent = { Text(recent, fontSize = Look.Name, fontWeight = FontWeight.Bold) },
+                                )
+                            }
+                        }
+                    }
+                    state.query.trim().length < 2 -> SearchNote("Vyberte aspoň 2 písmena názvu, třeba U L I pro Ulici.", Look.Text)
+                    results == null -> SearchNote("Hledám…", Look.Text)
+                    results.isEmpty() && !state.searching -> SearchNote("Nic nenalezeno v archivu. Zkuste jiná písmena.", Look.Text)
+                    else -> {
+                        SearchNote(if (state.searching) "Hledám…" else "Nalezeno v archivu", Look.Focus)
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp), contentPadding = PaddingValues(bottom = 8.dp)) {
+                            itemsIndexed(results) { index, hit ->
+                                SearchResultRow(state, hit, now, if (index == 0) Modifier.focusRequester(firstResult) else Modifier)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        HintBar("OK" to "Napsat písmeno", "→" to "Výsledky", "Zpět" to "Zavřít")
+    }
+    LaunchedEffect(Unit) { runCatching { firstKey.requestFocus() } }
+    LaunchedEffect(state.results) {
+        if (jumpToResults && !state.results.isNullOrEmpty()) {
+            jumpToResults = false
+            runCatching { firstResult.requestFocus() }
+        }
+    }
+}
+
+@Composable
+private fun SearchNote(text: String, color: Color) {
+    Text(text, fontSize = Look.Name, fontWeight = FontWeight.Bold, color = color, modifier = Modifier.padding(start = 12.dp, top = 4.dp, bottom = 8.dp))
+}
+
+/** A–Z in rows of six, then space and delete; big enough to hit with the arrows. */
+@Composable
+private fun LetterGrid(state: TvState, firstKey: FocusRequester) {
+    val rows = ('A'..'Z').map { it.toString() }.chunked(6)
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        rows.forEachIndexed { r, letters ->
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                letters.forEachIndexed { c, letter ->
+                    KeyButton(letter, Modifier.size(68.dp).then(if (r == 0 && c == 0) Modifier.focusRequester(firstKey) else Modifier)) {
+                        state.search(state.query + letter)
+                    }
+                }
+                if (r == rows.lastIndex) {
+                    KeyButton("mezera", Modifier.size(width = 146.dp, height = 68.dp)) { state.search(state.query + " ") }
+                    KeyButton("⌫ smazat", Modifier.size(width = 146.dp, height = 68.dp)) { state.search(state.query.dropLast(1)) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun KeyButton(label: String, modifier: Modifier, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = modifier,
+        contentPadding = PaddingValues(0.dp),
+        shape = ButtonDefaults.shape(shape = Look.Shape),
+        colors = buttonColors(),
+        scale = ButtonDefaults.scale(focusedScale = 1.1f),
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(label, fontSize = if (label.length == 1) 34.sp else Look.Body, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+        }
+    }
+}
+
+/** A found broadcast, laid out like a channel row: logo, title, then episode · channel · when. Green for a favourite show. */
+@Composable
+private fun SearchResultRow(state: TvState, hit: SearchHit, now: Long, modifier: Modifier) {
+    var focused by remember { mutableStateOf(false) }
+    val channel = state.channels.firstOrNull { it.name.equals(hit.channelName, ignoreCase = true) }
+    ListItem(
+        selected = false,
+        onClick = { state.playFound(hit) },
+        colors = rowColors(favourite = hit.title in state.favouriteShows),
+        shape = rowShape(),
+        border = rowBorder(focused),
+        scale = rowScale(),
+        modifier = modifier.onFocusChanged { focused = it.isFocused },
+        leadingContent = {
+            AsyncImage(model = channel?.logo, contentDescription = null, modifier = Modifier.size(width = 72.dp, height = 44.dp))
+        },
+        headlineContent = { Text(hit.title, fontSize = Look.Name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        supportingContent = {
+            // When first, so it never gets cut off; the logo says the channel (its name only when there is no logo).
+            val parts = listOfNotNull(hit.start.takeIf { it > 0 }?.let { whenText(it) }, hit.detail, hit.channelName.takeIf { channel?.logo == null })
+            Text(parts.joinToString(" · "), fontSize = Look.Body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        },
+        trailingContent = if (focused) {
+            { Text("▶ Přehrát", fontSize = Look.Body, fontWeight = FontWeight.Bold) }
+        } else null,
+    )
+}
+
+/** "dnes 19:00", "včera 19:00", otherwise "čtvrtek 22. 10. 19:00". */
+private fun whenText(epochSec: Long): String {
+    val zone = ZoneId.systemDefault()
+    val at = Instant.ofEpochSecond(epochSec).atZone(zone)
+    val today = LocalDate.now(zone)
+    val time = DateTimeFormatter.ofPattern("HH:mm").format(at)
+    return when (at.toLocalDate()) {
+        today -> "dnes $time"
+        today.minusDays(1) -> "včera $time"
+        else -> DateTimeFormatter.ofPattern("EEEE d. M. HH:mm", Locale.forLanguageTag("cs")).format(at)
     }
 }
 
@@ -611,16 +807,13 @@ private fun ArchiveBanner(channel: Channel, programme: Programme, player: ExoPla
             delay(500)
         }
     }
-    val date = remember(programme) {
-        DateTimeFormatter.ofPattern("EEEE d. M. HH:mm", Locale.forLanguageTag("cs"))
-            .format(Instant.ofEpochSecond(programme.start).atZone(ZoneId.systemDefault()))
-    }
+    val date = remember(programme) { if (programme.start > 0) " · " + whenText(programme.start) else "" }
     BannerFrame(modifier) {
         AsyncImage(model = channel.logo, contentDescription = null, modifier = Modifier.size(width = 110.dp, height = 66.dp))
         Spacer(Modifier.width(24.dp))
         Column(Modifier.weight(1f)) {
             val onAir = programme.end > System.currentTimeMillis() / 1000
-            Text("${if (onAir) "OD ZAČÁTKU" else "ZE ZÁZNAMU"} · ${channel.name} · $date", fontSize = Look.Body, fontWeight = FontWeight.Bold, color = Look.Focus)
+            Text("${if (onAir) "OD ZAČÁTKU" else "ZE ZÁZNAMU"} · ${channel.name}$date", fontSize = Look.Body, fontWeight = FontWeight.Bold, color = Look.Focus)
             Text((if (paused) "⏸  POZASTAVENO – " else "") + programme.title, fontSize = Look.Big, fontWeight = FontWeight.Bold, color = Look.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(clock(position), fontSize = Look.Body, color = Look.Text)

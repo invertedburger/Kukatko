@@ -101,6 +101,17 @@ class Tv(context: Context) {
         return authed { api.guide(channel, now.minus(7, ChronoUnit.DAYS), now.plus(6, ChronoUnit.HOURS)) }
     }
 
+    suspend fun search(query: String): List<SearchHit> = authed { api.search(query) }
+
+    /** The last 6 searches that led to watching something, newest first. */
+    fun recentSearches(): List<String> =
+        prefs.getString("recentSearches", null)?.let { runCatching { Json.decodeFromString<List<String>>(it) }.getOrNull() }.orEmpty()
+
+    fun rememberSearch(query: String) {
+        val list = (listOf(query) + recentSearches().filter { !it.equals(query, ignoreCase = true) }).take(6)
+        prefs.edit().putString("recentSearches", Json.encodeToString(list)).apply()
+    }
+
     suspend fun archiveStream(programme: Programme): Stream =
         authed { api.archiveStream(programme.payload ?: throw OneplayApi.ApiException("Pořad nejde přehrát")) }
 

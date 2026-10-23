@@ -26,6 +26,8 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -37,6 +39,12 @@ data class Channel(val id: String, val number: Int, val name: String, val logo: 
 data class Programme(val channelId: String, val title: String, val start: Long, val end: Long, val payload: JsonObject? = null) {
     fun progress(nowSec: Long) = ((nowSec - start).toFloat() / (end - start).coerceAtLeast(1)).coerceIn(0f, 1f)
 }
+
+/**
+ * A broadcast found by Oneplay's search ("Z TV programu"): [detail] is e.g. "Díl 5214, 22. série",
+ * [start] is 0 when the tile has no date; [payload] opens it from the archive like a guide entry.
+ */
+data class SearchHit(val title: String, val detail: String?, val channelName: String?, val start: Long, val payload: JsonObject)
 
 data class Session(val token: String, val profileId: String, val created: Long)
 
@@ -168,6 +176,51 @@ class OneplayApi(private val http: OkHttpClient, var version: String) {
             )
         }
     }.toMap()
+
+    /**
+     * Oneplay's own search (`page.search.display`, as in the Kodi add-on). It is fuzzy and copes without
+     * diacritics ("udalosti" finds Události). Only the "Z TV programu" carousel is kept: past broadcasts
+     * that play from the archive; each comes twice under two ids, so one per title, channel and time. Newest first.
+     */
+    suspend fun search(query: String): List<SearchHit> {
+        val carousels = call("page.search.display", obj("query" to query))["layout"]?.jsonObject?.get("blocks")?.jsonArray.orEmpty()
+            .map { it.jsonObject }
+            .filter { it.str("schema") == "TabBlock" }
+            .flatMap { it["layout"]?.jsonObject?.get("blocks")?.jsonArray.orEmpty() }
+            .flatMap { it.jsonObject["carousels"]?.jsonArray.orEmpty() }
+            .map { it.jsonObject }
+        val zone = ZoneId.of("Europe/Prague")
+        val today = LocalDate.now(zone)
+        return carousels.filter { it["tracking"]?.jsonObject?.str("title") == "Z TV programu" }
+            .flatMap { it["tiles"]?.jsonArray.orEmpty() }
+            .mapNotNull { element ->
+                val tile = element.jsonObject
+                val action = tile["action"]?.jsonObject?.takeIf { it.str("call") == "page.content.display" } ?: return@mapNotNull null
+                // Date and time come as labels: "23.10." and "19:00".
+                val labels = tile["additionalFragments"]?.jsonArray.orEmpty()
+                    .flatMap { it.jsonObject["labels"]?.jsonArray.orEmpty() }
+                    .mapNotNull { it.jsonObject.str("name") }
+                val date = labels.firstNotNullOfOrNull { Regex("""(\d{1,2})\.(\d{1,2})\.""").matchEntire(it) }
+                val time = labels.firstNotNullOfOrNull { Regex("""(\d{1,2}):(\d{2})""").matchEntire(it) }
+                val start = if (date != null && time != null) runCatching {
+                    val (d, m) = date.destructured
+                    // No year in the label: the one that puts the day nearest to today (31.12. seen on 2.1. is last year).
+                    val day = (-1..1).map { LocalDate.of(today.year + it, m.toInt(), d.toInt()) }
+                        .minBy { Math.abs(it.toEpochDay() - today.toEpochDay()) }
+                    val (h, min) = time.destructured
+                    day.atTime(h.toInt(), min.toInt()).atZone(zone).toEpochSecond()
+                }.getOrDefault(0L) else 0L
+                SearchHit(
+                    title = tile.str("title") ?: return@mapNotNull null,
+                    detail = (tile.str("subTitle") ?: tile.str("description"))?.takeIf { it.isNotBlank() },
+                    channelName = tile["image"]?.jsonObject?.get("labels")?.jsonArray?.firstOrNull()?.jsonObject?.str("name"),
+                    start = start,
+                    payload = action["params"]?.jsonObject?.get("payload") as? JsonObject ?: return@mapNotNull null,
+                )
+            }
+            .distinctBy { Triple(it.title, it.channelName, it.start) }
+            .sortedByDescending { it.start }
+    }
 
     /** A past programme: its detail page carries the content.play action for the recording. */
     suspend fun archiveStream(payload: JsonObject): Stream {

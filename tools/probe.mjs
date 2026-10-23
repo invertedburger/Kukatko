@@ -173,6 +173,19 @@ if (searchAt > 0 && process.argv[searchAt + 1]) {
                     const action = tile.action ?? {};
                     console.log(`     "${tile.title}" ${tile.subTitle ?? tile.description ?? ''} -> ${action.call ?? 'no action'} ${JSON.stringify(action.params?.payload ?? {}).slice(0, 120)}`);
                 }
+                if (process.argv.includes('-v') && tiles[0]) console.log(JSON.stringify(tiles[0], null, 1).slice(0, 3000));
+                // The first archived episode: does its detail page offer content.play, like a guide entry does?
+                if (carousel.tracking?.title === 'Z TV programu' && tiles[0]?.action?.call === 'page.content.display') {
+                    const header = (await call('page.content.display', tiles[0].action.params.payload)).layout?.blocks
+                        ?.find(b => b.schema === 'ContentHeaderBlock');
+                    const main = header?.mainAction?.action;
+                    let verdict = `main ${main?.call ?? 'none'}`;
+                    if (main?.call === 'content.play') {
+                        const play = await call('content.play', main.params.payload, { playbackCapabilities: capabilities });
+                        verdict += ` -> ${(play.media?.stream?.assets ?? []).map(a => a.protocol + (a.drm ? '+drm' : '')).join(', ') || 'no media'}`;
+                    }
+                    console.log(`     first episode plays: ${verdict}`);
+                }
             }
         }
     }
