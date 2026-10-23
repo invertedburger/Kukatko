@@ -36,6 +36,13 @@ channel rows look the same next to the guide. **Still to do:** the items marked 
   across all channels, newest first. Needs the 7-day guide of the favourite channels indexed in
   the background (same index as `/search` below). Favourite shows are already detected
   automatically (watched on 2 days), so no adding by hand.
+- *(todo)* **Hledat pořad**: Oneplay has its own search (`page.search.display {query}`, see
+  `node tools/probe.mjs search Ulice`). It is fuzzy and returns carousels; the useful one is
+  *Z TV programu*: archived episodes with "Díl 5214, 22. série", opened through
+  `page.content.display` like any recording (*Brzo v TV* = upcoming). Tiles carry a stable show id
+  (`show.2` = Ulice), better than matching titles for favourite shows. Input without a keyboard:
+  a big on-screen letter grid (A–Ž, arrows + OK) with results after 2–3 letters, plus a microphone
+  button if the TV has Google speech recognition (cs-CZ); recent searches kept as one-press rows.
 - *(todo)* **Playing a recording**: an on-screen bar with big buttons `⏪ 5 min` `⏯` `⏩ 5 min`
   `📺 Živě`; Left/Right move along it, OK presses. Back asks "Vrátit se na živé vysílání?".
   The position is remembered (*Pokračovat od 21:14*).

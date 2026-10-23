@@ -158,4 +158,23 @@ if (process.argv.includes('startover')) {
         { playbackCapabilities: { ...capabilities, liveSpecificCapabilities: capabilities } });
     console.log(`   live ${ch.name} timeline: ${JSON.stringify(live.playerControl?.liveControl?.timeline ?? null).slice(0, 400)}`);
 }
+// node tools/probe.mjs search Columbo: what Oneplay's own search finds (page.search.display, as in the Kodi add-on)
+const searchAt = process.argv.indexOf('search');
+if (searchAt > 0 && process.argv[searchAt + 1]) {
+    const query = process.argv[searchAt + 1];
+    step(`search "${query}"`);
+    const page = await call('page.search.display', { query });
+    for (const tab of (page.layout?.blocks ?? []).filter(b => b.schema === 'TabBlock')) {
+        for (const block of tab.layout?.blocks ?? []) {
+            for (const carousel of block.carousels ?? []) {
+                const tiles = carousel.tiles ?? [];
+                console.log(`   [${carousel.tracking?.title ?? carousel.title ?? '?'}] ${tiles.length} tiles`);
+                for (const tile of tiles.slice(0, 4)) {
+                    const action = tile.action ?? {};
+                    console.log(`     "${tile.title}" ${tile.subTitle ?? tile.description ?? ''} -> ${action.call ?? 'no action'} ${JSON.stringify(action.params?.payload ?? {}).slice(0, 120)}`);
+                }
+            }
+        }
+    }
+}
 step('done');

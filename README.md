@@ -16,6 +16,7 @@ Made for an elderly viewer: arrows, OK, Back and CH+/− are enough, every choic
 | Up / Down | next / previous channel while watching |
 | OK | channel list (Back closes) |
 | Left / Right, Info | show the info banner |
+| Back | closes the list / leaves a recording; on live TV only shows the banner, never exits (Home does) |
 | 0–9 | jump to channel number |
 
 In the channel list OK plays the channel; Right on a row reaches its buttons **Od začátku** (the
@@ -49,7 +50,8 @@ The old O2 TV 2.0 Kaltura API (partner 3201) has answered `403 PARTNER BLOCKED` 
 Account in `%USERPROFILE%\.kukatko.env` as `O2_USER=` / `O2_PASS=` (the Oneplay login).
 
 - `node tools/probe.mjs` runs the whole flow from the PC: channels, now playing, stream types, latency. Add
-  `startover` to check that programmes on air can be played from their beginning.
+  `startover` to check that programmes on air can be played from their beginning, `search <text>` to
+  see what Oneplay's own search (`page.search.display`) finds.
 - `tools/login.ps1` logs the app in over adb (emulator or TV), no typing with a remote.
 - `tools/type-clipboard.ps1` types the PC clipboard into the focused field over adb.
 

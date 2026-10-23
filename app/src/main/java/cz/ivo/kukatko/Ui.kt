@@ -264,6 +264,10 @@ private fun WatchScreen(state: TvState, player: ExoPlayer) {
     androidx.activity.compose.BackHandler(enabled = state.archive != null && !state.listOpen) {
         state.current?.let { state.play(it) }
     }
+    // On live TV Back never leaves the app (an elderly viewer would end up on the launcher); Home still does.
+    androidx.activity.compose.BackHandler(enabled = state.archive == null && !state.listOpen) {
+        state.showBanner()
+    }
     // Take focus back for zapping whenever the list closes.
     LaunchedEffect(state.listOpen) { if (!state.listOpen) focus.requestFocus() }
 }
