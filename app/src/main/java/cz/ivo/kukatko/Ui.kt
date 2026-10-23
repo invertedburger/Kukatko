@@ -1,13 +1,22 @@
 package cz.ivo.kukatko
 
 import android.view.KeyEvent
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -41,7 +50,6 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -49,15 +57,19 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import androidx.tv.material3.Border
 import androidx.tv.material3.Button
 import androidx.tv.material3.ListItem
-import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.ListItemBorder
+import androidx.tv.material3.ListItemDefaults
+import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.delay
@@ -68,6 +80,67 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Date
 import java.util.Locale
+
+/**
+ * Same look as the simplified, elderly-friendly Jellyfin fork (personal/jellyfin-androidtv-simple,
+ * SimpleComponents.kt): large type, yellow focus with black text, a slight grow and a pulsing white
+ * frame on the focused row, and key hints on screen.
+ */
+private object Look {
+    val Panel = Color(0xF2111111)
+    val Text = Color.White
+    val Dim = Color(0xFFBBBBBB)
+    val Disabled = Color(0xFF8A8A8A)
+    val Focus = Color(0xFFFFD400)
+    val OnFocus = Color.Black
+    val Selected = Color(0xFF333333)
+    val Live = Color(0xFFFF4D4D)
+    val Progress = Color(0xFF42A5F5)
+    val Track = Color(0x66FFFFFF)
+    val Shape = RoundedCornerShape(12.dp)
+
+    val Huge = 44.sp
+    val Big = 30.sp
+    val Name = 28.sp
+    val Body = 22.sp
+    val Hint = 20.sp
+}
+
+@Composable
+private fun rowColors() = ListItemDefaults.colors(
+    containerColor = Color.Transparent,
+    contentColor = Look.Text,
+    focusedContainerColor = Look.Focus,
+    focusedContentColor = Look.OnFocus,
+    selectedContainerColor = Look.Selected,
+    selectedContentColor = Look.Text,
+    focusedSelectedContainerColor = Look.Focus,
+    focusedSelectedContentColor = Look.OnFocus,
+    disabledContainerColor = Color.Transparent,
+    disabledContentColor = Look.Disabled,
+)
+
+@Composable
+private fun rowScale() = ListItemDefaults.scale(focusedScale = 1.03f, focusedSelectedScale = 1.03f)
+
+@Composable
+private fun rowShape() = ListItemDefaults.shape(shape = Look.Shape)
+
+/** Pulsing white frame so the focused row is found at a glance; only the focused row animates. */
+@Composable
+private fun rowBorder(focused: Boolean): ListItemBorder {
+    val alpha = if (focused) {
+        val pulse by rememberInfiniteTransition(label = "focus pulse").animateFloat(
+            initialValue = 1f,
+            targetValue = 0.35f,
+            animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+            label = "focus frame",
+        )
+        pulse
+    } else 0f
+    val frame = Border(BorderStroke(4.dp, Color.White.copy(alpha = alpha)), shape = Look.Shape)
+    return ListItemDefaults.border(focusedBorder = frame, focusedSelectedBorder = frame)
+}
 
 @Composable
 fun App(state: TvState, player: ExoPlayer) {
@@ -103,9 +176,12 @@ private fun WatchScreen(state: TvState, player: ExoPlayer) {
                 when (code) {
                     KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_CHANNEL_UP -> state.zap(1)
                     KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN -> state.zap(-1)
-                    // Left/Right skip 30 s in an archive recording; on live TV they just show the banner.
+                    // In a recording Left/Right skip 30 s. On live TV Right means "archive", as everywhere else.
                     KeyEvent.KEYCODE_DPAD_LEFT -> if (state.archive != null) state.seek(-30_000) else state.showBanner()
-                    KeyEvent.KEYCODE_DPAD_RIGHT -> if (state.archive != null) state.seek(30_000) else state.showBanner()
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> if (state.archive != null) state.seek(30_000) else state.current?.let {
+                        state.listOpen = true
+                        state.openGuide(it)
+                    }
                     KeyEvent.KEYCODE_MEDIA_REWIND -> state.seek(-300_000)
                     KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> state.seek(300_000)
                     KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE,
@@ -142,27 +218,33 @@ private fun WatchScreen(state: TvState, player: ExoPlayer) {
         if (state.digits.isNotEmpty()) {
             Text(
                 state.digits,
-                fontSize = 64.sp,
+                fontSize = 80.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
-                modifier = Modifier.align(Alignment.TopEnd).padding(48.dp),
+                color = Look.OnFocus,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(40.dp)
+                    .background(Look.Focus, RoundedCornerShape(12.dp))
+                    .padding(horizontal = 24.dp),
             )
         }
         state.message?.let {
             Text(
                 it,
                 color = Color.White,
+                fontSize = Look.Body,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(32.dp)
-                    .background(Color(0xCC8B0000), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .background(Color(0xFFB00000), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
             )
         }
         if (state.listOpen) {
-            Row(Modifier.align(Alignment.CenterStart).fillMaxHeight()) {
-                ChannelList(state, Modifier)
-                state.guideChannel?.let { GuidePanel(state, it) }
+            val guideOpen = state.guideChannel != null
+            Row(Modifier.align(Alignment.CenterStart).fillMaxHeight().then(if (guideOpen) Modifier.fillMaxWidth() else Modifier)) {
+                ChannelList(state, Modifier.width(if (guideOpen) 360.dp else 540.dp))
+                state.guideChannel?.let { GuidePanel(state, it, Modifier.weight(1f)) }
             }
         }
     }
@@ -177,107 +259,134 @@ private fun WatchScreen(state: TvState, player: ExoPlayer) {
 @Composable
 private fun ChannelList(state: TvState, modifier: Modifier) {
     // The channel that should hold focus: the current one, or the one whose guide was last opened.
-    var focusId by remember { mutableStateOf(state.current?.id) }
+    var focusId by remember { mutableStateOf(state.guideChannel?.id ?: state.current?.id) }
     val focusIndex = state.channels.indexOfFirst { it.id == focusId }.coerceAtLeast(0)
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = (focusIndex - 3).coerceAtLeast(0))
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = (focusIndex - 2).coerceAtLeast(0))
     val currentFocus = remember { FocusRequester() }
     val now = System.currentTimeMillis() / 1000
+    val guideOpen = state.guideChannel != null
 
     androidx.activity.compose.BackHandler {
         if (state.guideChannel != null) state.closeGuide() else state.listOpen = false
     }
-    LazyColumn(
-        state = listState,
-        modifier = modifier
+    Column(
+        modifier
             .fillMaxHeight()
-            .width(520.dp)
-            .background(Brush.horizontalGradient(listOf(Color(0xF0101418), Color(0xC0101418))))
+            .background(Look.Panel)
             .onPreviewKeyEvent {
                 // Menu/guide closes the list too; Back is handled by BackHandler.
                 if (it.type == KeyEventType.KeyDown && it.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_GUIDE) {
                     state.listOpen = false; true
                 } else false
             },
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 24.dp, horizontal = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        itemsIndexed(state.channels, key = { _, ch -> ch.id }) { index, channel ->
-            val programme = state.nowPlaying[channel.id]
-            ListItem(
-                selected = channel.id == state.current?.id,
-                onClick = {
-                    state.listOpen = false
-                    state.closeGuide()
-                    if (channel.id != state.current?.id || state.archive != null) state.play(channel)
-                },
-                onLongClick = { focusId = channel.id; state.openGuide(channel) },
-                modifier = (if (index == focusIndex) Modifier.focusRequester(currentFocus) else Modifier)
-                    .onPreviewKeyEvent {
-                        // Right opens this channel's guide (archive) next to the list.
-                        if (it.type == KeyEventType.KeyDown && it.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
-                            focusId = channel.id
-                            state.openGuide(channel)
-                            true
-                        } else false
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(vertical = 16.dp, horizontal = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            itemsIndexed(state.channels, key = { _, ch -> ch.id }) { index, channel ->
+                val programme = state.nowPlaying[channel.id]
+                var focused by remember { mutableStateOf(false) }
+                ListItem(
+                    selected = channel.id == state.current?.id,
+                    onClick = {
+                        state.listOpen = false
+                        state.closeGuide()
+                        if (channel.id != state.current?.id || state.archive != null) state.play(channel)
                     },
-                leadingContent = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("${channel.number}", modifier = Modifier.width(36.dp), style = MaterialTheme.typography.labelLarge)
-                        AsyncImage(model = channel.logo, contentDescription = null, modifier = Modifier.size(width = 54.dp, height = 36.dp))
-                    }
-                },
-                headlineContent = { Text(channel.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                supportingContent = programme?.let {
-                    {
-                        Column {
-                            Text(it.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Progress(it.progress(now))
+                    onLongClick = { focusId = channel.id; state.openGuide(channel) },
+                    colors = rowColors(),
+                    shape = rowShape(),
+                    border = rowBorder(focused),
+                    scale = rowScale(),
+                    modifier = (if (index == focusIndex) Modifier.focusRequester(currentFocus) else Modifier)
+                        .onFocusChanged { focused = it.isFocused }
+                        .onPreviewKeyEvent {
+                            // Right opens this channel's guide (archive) next to the list.
+                            if (it.type == KeyEventType.KeyDown && it.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                                focusId = channel.id
+                                state.openGuide(channel)
+                                true
+                            } else false
+                        },
+                    leadingContent = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("${channel.number}", fontSize = Look.Name, fontWeight = FontWeight.Bold, modifier = Modifier.width(48.dp))
+                            if (!guideOpen) {
+                                AsyncImage(model = channel.logo, contentDescription = null, modifier = Modifier.size(width = 72.dp, height = 44.dp))
+                            }
                         }
-                    }
-                },
-            )
+                    },
+                    headlineContent = {
+                        Text(channel.name, fontSize = Look.Name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    },
+                    supportingContent = programme?.takeIf { !guideOpen }?.let {
+                        {
+                            Column {
+                                Text(it.title, fontSize = Look.Body, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Progress(it.progress(now), LocalContentColor.current)
+                            }
+                        }
+                    },
+                    // Say on the highlighted row what Right does.
+                    trailingContent = if (focused && !guideOpen) {
+                        { Text("→ Archiv", fontSize = Look.Body, fontWeight = FontWeight.Bold) }
+                    } else null,
+                )
+            }
         }
+        if (!guideOpen) HintBar("OK" to "Přepnout", "→" to "Archiv", "Zpět" to "Zavřít")
     }
     // On open, and again when the guide closes, focus goes back to the channel row.
     LaunchedEffect(state.guideChannel) { if (state.guideChannel == null) runCatching { currentFocus.requestFocus() } }
 }
 
 @Composable
-private fun GuidePanel(state: TvState, channel: Channel) {
+private fun GuidePanel(state: TvState, channel: Channel, modifier: Modifier) {
     val items = state.guide
     val nowSec = System.currentTimeMillis() / 1000
     val archiveFrom = nowSec - 7 * 86_400
     val time = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
     Column(
-        Modifier
+        modifier
             .fillMaxHeight()
-            .width(640.dp)
-            .background(Color(0xF0161B21))
-            .padding(vertical = 24.dp, horizontal = 12.dp)
+            .background(Color.Black)
+            .border(2.dp, Look.Focus)
             .onPreviewKeyEvent {
                 if (it.type == KeyEventType.KeyDown && it.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
                     state.closeGuide(); true
                 } else false
             },
     ) {
-        Text("${channel.name} · archiv 7 dní", fontSize = 20.sp, color = Color.White, modifier = Modifier.padding(start = 12.dp, bottom = 8.dp))
+        Column(Modifier.padding(start = 20.dp, top = 16.dp, end = 20.dp, bottom = 8.dp)) {
+            Text(channel.name, fontSize = Look.Big, fontWeight = FontWeight.Bold, color = Look.Text)
+            Text("Archiv – pořady až 7 dní zpět", fontSize = Look.Body, color = Look.Dim)
+        }
         when {
-            items == null -> Text("Načítám program…", color = Color.Gray, modifier = Modifier.padding(12.dp))
-            items.isEmpty() -> Text("Program není k dispozici", color = Color.Gray, modifier = Modifier.padding(12.dp))
+            items == null -> Text("Načítám program…", fontSize = Look.Name, color = Look.Text, modifier = Modifier.padding(20.dp).weight(1f))
+            items.isEmpty() -> Text("Program není k dispozici", fontSize = Look.Name, color = Look.Text, modifier = Modifier.padding(20.dp).weight(1f))
             else -> {
                 // Day headers between programmes; focus starts on what's on now.
                 val rows = remember(items) { withDayHeaders(items) }
                 val nowRow = rows.indexOfFirst { it is Programme && it.start <= nowSec && it.end > nowSec }
                     .takeIf { it >= 0 } ?: rows.indexOfLast { it is Programme && it.end <= nowSec }.coerceAtLeast(0)
-                val listState = rememberLazyListState((nowRow - 4).coerceAtLeast(0))
+                val listState = rememberLazyListState((nowRow - 2).coerceAtLeast(0))
                 val nowFocus = remember { FocusRequester() }
-                LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
                     itemsIndexed(rows) { index, row ->
                         if (row is String) {
-                            Text(row, color = Color(0xFF3D8BFF), fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 12.dp, top = 12.dp, bottom = 4.dp))
+                            Text(row, fontSize = Look.Name, fontWeight = FontWeight.Bold, color = Look.Focus, modifier = Modifier.padding(start = 12.dp, top = 16.dp, bottom = 4.dp))
                         } else if (row is Programme) {
                             val live = row.start <= nowSec && row.end > nowSec
                             val playable = live || (row.end <= nowSec && row.start >= archiveFrom && row.payload != null)
+                            var focused by remember { mutableStateOf(false) }
                             ListItem(
                                 selected = live,
                                 enabled = playable,
@@ -290,12 +399,26 @@ private fun GuidePanel(state: TvState, channel: Channel) {
                                         state.playArchive(row)
                                     }
                                 },
-                                modifier = if (index == nowRow) Modifier.focusRequester(nowFocus) else Modifier,
-                                leadingContent = { Text(time.format(Date(row.start * 1000)), modifier = Modifier.width(56.dp)) },
-                                headlineContent = { Text(row.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                colors = rowColors(),
+                                shape = rowShape(),
+                                border = rowBorder(focused),
+                                scale = rowScale(),
+                                modifier = (if (index == nowRow) Modifier.focusRequester(nowFocus) else Modifier)
+                                    .onFocusChanged { focused = it.isFocused },
+                                leadingContent = {
+                                    Text(time.format(Date(row.start * 1000)), fontSize = Look.Name, fontWeight = FontWeight.Bold, modifier = Modifier.width(80.dp))
+                                },
+                                headlineContent = {
+                                    Text(row.title, fontSize = Look.Name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                },
                                 supportingContent = if (live) {
-                                    { Progress(row.progress(nowSec)) }
+                                    { Progress(row.progress(nowSec), LocalContentColor.current) }
                                 } else null,
+                                trailingContent = when {
+                                    live -> { { Text("● ŽIVĚ", fontSize = Look.Body, fontWeight = FontWeight.Bold, color = if (focused) Look.OnFocus else Look.Live) } }
+                                    focused && playable -> { { Text("▶ Přehrát", fontSize = Look.Body, fontWeight = FontWeight.Bold) } }
+                                    else -> null
+                                },
                             )
                         }
                     }
@@ -303,6 +426,39 @@ private fun GuidePanel(state: TvState, channel: Channel) {
                 LaunchedEffect(items) { runCatching { nowFocus.requestFocus() } }
             }
         }
+        HintBar("↑ ↓" to "Pořady", "OK" to "Přehrát", "←" to "Kanály", "Zpět" to "Zavřít")
+    }
+}
+
+/** A row of key caps with what they do, at the bottom of a panel or banner. */
+@Composable
+private fun HintBar(vararg hints: Pair<String, String>, modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .background(Color.Black)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        hints.forEach { (key, label) -> KeyHint(key, label) }
+    }
+}
+
+@Composable
+private fun KeyHint(key: String, label: String, size: TextUnit = Look.Hint) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            key,
+            fontSize = size,
+            fontWeight = FontWeight.Bold,
+            color = Look.OnFocus,
+            modifier = Modifier
+                .background(Look.Focus, RoundedCornerShape(6.dp))
+                .padding(horizontal = 10.dp, vertical = 2.dp),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(label, fontSize = size, color = Look.Text, maxLines = 1, softWrap = false)
     }
 }
 
@@ -330,6 +486,49 @@ private fun withDayHeaders(items: List<Programme>): List<Any> {
     }
 }
 
+/** Shared frame for the bottom banners: solid black so text stays readable over any picture. */
+@Composable
+private fun BannerFrame(modifier: Modifier, content: @Composable RowScope.() -> Unit) {
+    Column(modifier.fillMaxWidth()) {
+        Box(Modifier.fillMaxWidth().height(24.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Look.Panel))))
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(Look.Panel)
+                .padding(horizontal = 40.dp, vertical = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            content = content,
+        )
+    }
+}
+
+@Composable
+private fun Banner(channel: Channel, programme: Programme?, modifier: Modifier) {
+    val time = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+    BannerFrame(modifier) {
+        Text("${channel.number}", fontSize = Look.Huge, fontWeight = FontWeight.Bold, color = Look.Focus)
+        Spacer(Modifier.width(24.dp))
+        AsyncImage(model = channel.logo, contentDescription = null, modifier = Modifier.size(width = 110.dp, height = 66.dp))
+        Spacer(Modifier.width(24.dp))
+        Column(Modifier.weight(1f)) {
+            Text(channel.name, fontSize = Look.Big, fontWeight = FontWeight.Bold, color = Look.Text)
+            if (programme != null) {
+                Text(programme.title, fontSize = Look.Name, color = Look.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(time.format(Date(programme.start * 1000)), fontSize = Look.Body, color = Look.Text)
+                    Box(Modifier.weight(1f).padding(horizontal = 16.dp)) { Progress(programme.progress(System.currentTimeMillis() / 1000)) }
+                    Text(time.format(Date(programme.end * 1000)), fontSize = Look.Body, color = Look.Text)
+                }
+            }
+            Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                KeyHint("↑ ↓", "Přepnout")
+                KeyHint("OK", "Kanály")
+                KeyHint("→", "Archiv")
+            }
+        }
+    }
+}
+
 @Composable
 private fun ArchiveBanner(channel: Channel, programme: Programme, player: ExoPlayer, paused: Boolean, modifier: Modifier) {
     var position by remember { mutableStateOf(0L) }
@@ -345,24 +544,23 @@ private fun ArchiveBanner(channel: Channel, programme: Programme, player: ExoPla
         DateTimeFormatter.ofPattern("EEEE d. M. HH:mm", Locale.forLanguageTag("cs"))
             .format(Instant.ofEpochSecond(programme.start).atZone(ZoneId.systemDefault()))
     }
-    Row(
-        modifier
-            .fillMaxWidth()
-            .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xE0000000))))
-            .padding(horizontal = 48.dp, vertical = 32.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        AsyncImage(model = channel.logo, contentDescription = null, modifier = Modifier.size(width = 90.dp, height = 60.dp))
-        Spacer(Modifier.width(20.dp))
+    BannerFrame(modifier) {
+        AsyncImage(model = channel.logo, contentDescription = null, modifier = Modifier.size(width = 110.dp, height = 66.dp))
+        Spacer(Modifier.width(24.dp))
         Column(Modifier.weight(1f)) {
-            Text("${channel.name} · ze záznamu · $date", fontSize = 16.sp, color = Color(0xFFDDDDDD))
-            Text((if (paused) "⏸  " else "") + programme.title, fontSize = 22.sp, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("ZE ZÁZNAMU · ${channel.name} · $date", fontSize = Look.Body, fontWeight = FontWeight.Bold, color = Look.Focus)
+            Text((if (paused) "⏸  POZASTAVENO – " else "") + programme.title, fontSize = Look.Big, fontWeight = FontWeight.Bold, color = Look.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(clock(position), fontSize = 14.sp, color = Color.Gray)
-                Box(Modifier.weight(1f).padding(horizontal = 12.dp)) { Progress(if (duration > 0) position.toFloat() / duration else 0f) }
-                Text(clock(duration), fontSize = 14.sp, color = Color.Gray)
+                Text(clock(position), fontSize = Look.Body, color = Look.Text)
+                Box(Modifier.weight(1f).padding(horizontal = 16.dp)) { Progress(if (duration > 0) position.toFloat() / duration else 0f) }
+                Text(clock(duration), fontSize = Look.Body, color = Look.Text)
             }
-            Text("←/→ 30 s · mezerník pauza · Zpět = živě", fontSize = 12.sp, color = Color.Gray)
+            Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                KeyHint("← →", "30 s")
+                KeyHint("⏯", "Pauza")
+                KeyHint("Zpět", "Živé vysílání")
+                KeyHint("OK", "Kanály")
+            }
         }
     }
 }
@@ -373,37 +571,9 @@ private fun clock(ms: Long): String {
 }
 
 @Composable
-private fun Banner(channel: Channel, programme: Programme?, modifier: Modifier) {
-    val time = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
-    Row(
-        modifier
-            .fillMaxWidth()
-            .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xE0000000))))
-            .padding(horizontal = 48.dp, vertical = 32.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("${channel.number}", fontSize = 40.sp, fontWeight = FontWeight.Bold, color = Color.White)
-        Spacer(Modifier.width(20.dp))
-        AsyncImage(model = channel.logo, contentDescription = null, modifier = Modifier.size(width = 90.dp, height = 60.dp))
-        Spacer(Modifier.width(20.dp))
-        Column(Modifier.weight(1f)) {
-            Text(channel.name, fontSize = 22.sp, color = Color.White)
-            if (programme != null) {
-                Text(programme.title, fontSize = 18.sp, color = Color(0xFFDDDDDD), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(time.format(Date(programme.start * 1000)), fontSize = 14.sp, color = Color.Gray)
-                    Box(Modifier.weight(1f).padding(horizontal = 12.dp)) { Progress(programme.progress(System.currentTimeMillis() / 1000)) }
-                    Text(time.format(Date(programme.end * 1000)), fontSize = 14.sp, color = Color.Gray)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun Progress(fraction: Float) {
-    Box(Modifier.fillMaxWidth().padding(top = 4.dp).height(3.dp).background(Color(0x40FFFFFF))) {
-        Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(Color(0xFF3D8BFF)))
+private fun Progress(fraction: Float, color: Color = Look.Progress) {
+    Box(Modifier.fillMaxWidth().padding(top = 6.dp).height(6.dp).background(Look.Track, RoundedCornerShape(3.dp))) {
+        Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().background(color, RoundedCornerShape(3.dp)))
     }
 }
 
@@ -415,16 +585,16 @@ private fun LoginScreen(state: TvState) {
     val second = remember { FocusRequester() }
     val canLogin = !state.busy && user.isNotBlank() && password.isNotEmpty()
     // Form sits at the top: the TV's on-screen keyboard takes the bottom half.
-    Box(Modifier.fillMaxSize().background(Color(0xFF101418)).padding(top = 48.dp), contentAlignment = Alignment.TopCenter) {
-        Column(Modifier.width(420.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Kukátko", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color.White)
-            Text("Přihlášení účtem Oneplay (dřív O2 TV)", color = Color.Gray)
-            state.message?.let { Text(it, color = Color(0xFFFF6B6B)) }
-            Field("E-mail / uživatel", user, { user = it }, Modifier.focusRequester(first), onDone = { second.requestFocus() })
+    Box(Modifier.fillMaxSize().background(Color.Black).padding(top = 32.dp), contentAlignment = Alignment.TopCenter) {
+        Column(Modifier.width(560.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Kukátko", fontSize = Look.Huge, fontWeight = FontWeight.Bold, color = Look.Text)
+            Text("Přihlášení účtem Oneplay (dřív O2 TV)", fontSize = Look.Body, color = Look.Text)
+            state.message?.let { Text(it, fontSize = Look.Body, color = Look.Live) }
+            Field("E-mail", user, { user = it }, Modifier.focusRequester(first), onDone = { second.requestFocus() })
             Field("Heslo", password, { password = it }, Modifier.focusRequester(second), password = true,
                 onDone = { if (canLogin) state.login(user.trim(), password) })
             Button(onClick = { state.login(user.trim(), password) }, enabled = canLogin) {
-                Text(if (state.busy) "Přihlašuji…" else "Přihlásit")
+                Text(if (state.busy) "Přihlašuji…" else "Přihlásit", fontSize = Look.Name)
             }
         }
     }
@@ -442,13 +612,13 @@ private fun Field(
 ) {
     var focused by remember { mutableStateOf(false) }
     Column {
-        Text(label, color = Color.Gray, fontSize = 14.sp)
+        Text(label, color = Look.Text, fontSize = Look.Body)
         BasicTextField(
             value = value,
             onValueChange = onChange,
             singleLine = true,
-            textStyle = TextStyle(color = Color.White, fontSize = 20.sp),
-            cursorBrush = SolidColor(Color.White),
+            textStyle = TextStyle(color = Look.Text, fontSize = Look.Name),
+            cursorBrush = SolidColor(Look.Focus),
             visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
             keyboardOptions = KeyboardOptions(
                 keyboardType = if (password) KeyboardType.Password else KeyboardType.Email,
@@ -464,8 +634,8 @@ private fun Field(
                 }
                 .fillMaxWidth()
                 .onFocusChanged { focused = it.isFocused }
-                .border(2.dp, if (focused) Color.White else Color(0xFF444444), RoundedCornerShape(8.dp))
-                .padding(12.dp),
+                .border(3.dp, if (focused) Look.Focus else Look.Disabled, RoundedCornerShape(8.dp))
+                .padding(14.dp),
         )
     }
 }

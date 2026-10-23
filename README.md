@@ -41,6 +41,12 @@ Account in `%USERPROFILE%\.kukatko.env` as `O2_USER=` / `O2_PASS=` (the Oneplay 
 
 ## Build & install
 
+**`run.bat`** does it all for testing: builds (debug by default, `release` for the optimised
+build), starts the `KukatkoTV` emulator if no device is connected, installs, launches and follows
+the app's log. Add `login` to log in from `.kukatko.env`, `nolog` to skip the log, `tv <ip>` to go
+to the real TV over adb instead (or `setx KUKATKO_TV <ip>` once and just `tv`). The log shows every
+key the remote sends.
+
 Toolchain lives in `C:\Users\you\android-dev` (JDK 17, SDK 35, `install.sh`). Android TV
 emulator: AVD `KukatkoTV` (`sdk/emulator/emulator.exe -avd KukatkoTV`).
 

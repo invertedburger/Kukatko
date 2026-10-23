@@ -3,6 +3,8 @@ package cz.ivo.kukatko
 import android.content.Intent
 import android.os.Bundle
 import android.util.Base64
+import android.util.Log
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.getValue
@@ -63,6 +65,14 @@ class MainActivity : ComponentActivity() {
         intent.removeExtra("login")
         val lines = runCatching { String(Base64.decode(encoded, Base64.DEFAULT)).split('\n', limit = 2) }.getOrNull()
         if (lines?.size == 2) state.login(lines[0].trim(), lines[1].trimEnd('\r'))
+    }
+
+    /** Every key press goes to the log (`adb logcat -s Kukatko:I`), so a real remote's buttons can be read off the TV. */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+            Log.i("Kukatko", "key ${KeyEvent.keyCodeToString(event.keyCode)} code=${event.keyCode} scan=${event.scanCode} device=${event.device?.name}")
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onStart() {
