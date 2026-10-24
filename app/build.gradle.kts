@@ -31,6 +31,13 @@ android {
         }
     }
 
+    // Private branding (not in git): ../local-branding/res overrides the public banner and icon in local builds.
+    val localBranding = file("../local-branding/res")
+    if (localBranding.isDirectory) {
+        sourceSets.getByName("debug").res.srcDir(localBranding)
+        sourceSets.getByName("release").res.srcDir(localBranding)
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
