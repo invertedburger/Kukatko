@@ -44,9 +44,7 @@ if ($LASTEXITCODE -ne 0) { throw "Install failed" }
 
 if ($Login) {
     Write-Host "=== Logging in"
-    # In standby (Doze + Low Power Standby) apps get no network, the login would fail at once.
-    & $adb shell dumpsys deviceidle disable | Out-Null
-    Start-Sleep 2
+    # In standby apps get no network and the login fails at once: turn the TV on first (then add -Force).
     & $adb logcat -c
     & powershell -NoProfile -ExecutionPolicy Bypass -File "$PSScriptRoot\login.ps1" | Out-Null
     $result = $null
@@ -56,7 +54,6 @@ if ($Login) {
     }
     Write-Host "    $(if ($result) { $result.Matches[0].Value } else { 'no answer within 30 s' })"
     & $adb shell am force-stop cz.ivo.kukatko
-    & $adb shell dumpsys deviceidle enable | Out-Null
 }
 
 # Google TV may hold the install for Play Protect ("unknown developer"); it shows on the TV.
