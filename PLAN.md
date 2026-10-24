@@ -18,7 +18,7 @@ They watch live TV, missed programmes and favourite shows, using only the arrows
 CH+/−; no colour buttons. Rules: one key means one thing everywhere, no hidden directions or
 long presses, everything you can do is a visible button.
 
-**Done (branch `ui-simple`):** CH+/− from anywhere, Left/Right on live TV only show the banner,
+**Done:** CH+/− from anywhere, Left/Right on live TV only show the banner,
 visible row buttons *Od začátku* / *Zmeškané pořady*, automatic favourite channels and shows (green),
 channel rows look the same next to the guide. **Still to do:** the items marked *(todo)* below.
 

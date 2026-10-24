@@ -11,7 +11,7 @@ rem Options combine, e.g. "run.bat release login tv 192.168.0.50".
 setlocal
 cd /d "%~dp0"
 
-set "DEV=C:\Users\you\android-dev"
+set "DEV=%USERPROFILE%\android-dev"
 set "JAVA_HOME=%DEV%\jdk17"
 set "ANDROID_SDK_ROOT=%DEV%\sdk"
 set "ADB=%DEV%\sdk\platform-tools\adb.exe"

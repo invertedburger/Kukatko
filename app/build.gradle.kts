@@ -19,12 +19,23 @@ android {
         versionName = "0.1"
     }
 
+    // CI signs releases with its own key (KUKATKO_KEYSTORE* variables); everywhere else the debug key is
+    // used, so a local build updates a local install.
+    val releaseKeystore = System.getenv("KUKATKO_KEYSTORE")
+    if (releaseKeystore != null) {
+        signingConfigs.create("release") {
+            storeFile = file(releaseKeystore)
+            storePassword = System.getenv("KUKATKO_KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("KUKATKO_KEY_ALIAS")
+            keyPassword = System.getenv("KUKATKO_KEY_PASSWORD")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Personal sideload build: the debug key is fine.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(if (releaseKeystore != null) "release" else "debug")
         }
     }
     compileOptions {

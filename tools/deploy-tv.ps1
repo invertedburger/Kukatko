@@ -1,30 +1,32 @@
 # Puts the release build on the living-room TV without anyone at the TV:
 #   powershell -ExecutionPolicy Bypass -File tools\deploy-tv.ps1          update (keeps login, favourites, searches)
 #   powershell -ExecutionPolicy Bypass -File tools\deploy-tv.ps1 -Login   first install: also log in from %USERPROFILE%\.kukatko.env
-# Connects with Home Assistant's ADB key (C:\path\to\adbkey, already trusted by the TV), so no
+# Connects with an adb key the TV already trusts (KUKATKO_ADB_KEY, e.g. Home Assistant's androidtv_adbkey), so no
 # "Allow debugging?" prompt appears. Refuses while the TV screen is on (someone is watching) unless -Force.
-# The app is closed again afterwards; a login with the screen off never starts playback.
-param([switch]$Login, [switch]$Force, [switch]$NoBuild, [string]$Tv = "192.168.0.50:5555")
+# The app is closed again afterwards. -Login needs the TV switched on (in standby apps have no network): add -Force.
+param([switch]$Login, [switch]$Force, [switch]$NoBuild, [string]$Tv = $env:KUKATKO_TV)
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot
-$adb = "C:\Users\you\android-dev\sdk\platform-tools\adb.exe"
+$adb = "$env:USERPROFILE\android-dev\sdk\platform-tools\adb.exe"
 $apk = "$root\app\build\outputs\apk\release\app-release.apk"
-$haKey = "C:\path\to\adbkey"
+$haKey = $env:KUKATKO_ADB_KEY   # optional: an adb key the TV already trusts
 
 if (-not $NoBuild) {
     Write-Host "=== Building release"
-    $env:JAVA_HOME = "C:\Users\you\android-dev\jdk17"
+    $env:JAVA_HOME = "$env:USERPROFILE\android-dev\jdk17"
     & "$root\gradlew.bat" -p $root assembleRelease --console=plain -q
     if ($LASTEXITCODE -ne 0) { throw "Build failed" }
 }
 
 Write-Host "=== Connecting to $Tv"
-if (Test-Path $haKey) {
+if (-not $Tv) { throw "Give the TV address: -Tv 192.168.0.50 (or setx KUKATKO_TV 192.168.0.50)" }
+if ($Tv -notmatch ":") { $Tv = "${Tv}:5555" }
+if ($haKey -and (Test-Path $haKey)) {
     # The adb server reads extra keys only when it starts.
     & $adb kill-server 2>$null
     $env:ADB_VENDOR_KEYS = $haKey
 } else {
-    Write-Host "    $haKey not found: the TV will ask 'Allow debugging?' once; tick 'Always allow'."
+    Write-Host "    No trusted adb key (KUKATKO_ADB_KEY): the TV will ask 'Allow debugging?' once; tick 'Always allow'."
 }
 & $adb connect $Tv | Write-Host
 $env:ANDROID_SERIAL = $Tv

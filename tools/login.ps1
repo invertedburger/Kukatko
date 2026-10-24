@@ -2,7 +2,7 @@
 #   O2_USER=you@example.com
 #   O2_PASS=...
 # The account goes over adb as base64, so no typing with a remote and no shell escaping.
-$adb = "C:\Users\you\android-dev\sdk\platform-tools\adb.exe"
+$adb = "$env:USERPROFILE\android-dev\sdk\platform-tools\adb.exe"
 $cfg = @{}
 Get-Content "$HOME\.kukatko.env" | ForEach-Object {
     $key, $value = $_ -split '=', 2
