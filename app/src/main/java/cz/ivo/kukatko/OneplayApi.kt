@@ -61,7 +61,12 @@ class OneplayApi(private val http: OkHttpClient, var version: String) {
 
     companion object {
         const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:144.0) Gecko/20100101 Firefox/144.0"
-        const val DEVICE_NAME = "Kukátko"
+        /**
+         * The name this device gets in the account. With the model in it, the TV and the emulator each keep
+         * their own entry: a login removes only older entries with the same name (and old plain "Kukátko" ones).
+         */
+        val DEVICE_NAME = "Kukátko (${android.os.Build.MODEL})"
+        private const val OLD_DEVICE_NAME = "Kukátko"
         private const val API = "https://http.cms.jyxo.cz/api"
         private const val SOCKET = "wss://ws.cms.jyxo.cz/websocket"
         private val JSON_TYPE = "application/json;charset=UTF-8".toMediaType()
@@ -109,7 +114,7 @@ class OneplayApi(private val http: OkHttpClient, var version: String) {
         val devices = blocks.firstOrNull { it.str("schema") == "SettingUserDevicesBlock" }
             ?.get("devices")?.jsonObject?.get("devices")?.jsonArray?.map { it.jsonObject }.orEmpty()
         for (device in devices) {
-            if (device.str("id") != deviceId && device.str("name") == DEVICE_NAME) {
+            if (device.str("id") != deviceId && device.str("name") in setOf(DEVICE_NAME, OLD_DEVICE_NAME)) {
                 call("user.device.remove", obj("criteria" to obj("schema" to "UserDeviceIdCriteria", "id" to device.str("id"))))
             }
         }

@@ -10,6 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -44,7 +45,7 @@ class MainActivity : ComponentActivity() {
             // Start playing after 1 s of buffer instead of the default 2.5 s: faster zapping.
             .setLoadControl(DefaultLoadControl.Builder().setBufferDurationsMs(15_000, 30_000, 1_000, 2_000).build())
             .build()
-        state = TvState(Tv(this), player, lifecycleScope)
+        state = TvState(Tv(this), player, lifecycleScope) { lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) }
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
@@ -97,7 +98,8 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-class TvState(private val tv: Tv, private val player: ExoPlayer, private val scope: CoroutineScope) {
+/** [onScreen] tells whether the app is visible: a login sent over adb while the TV sleeps must not start playing. */
+class TvState(private val tv: Tv, private val player: ExoPlayer, private val scope: CoroutineScope, private val onScreen: () -> Boolean) {
     var loggedIn by mutableStateOf(tv.hasAccount)
     var channels by mutableStateOf(tv.cachedChannels())
     var nowPlaying by mutableStateOf(emptyMap<String, Programme>())
@@ -239,8 +241,9 @@ class TvState(private val tv: Tv, private val player: ExoPlayer, private val sco
         message = null
         scope.launch {
             runCatching { tv.login(user, password) }
-                .onSuccess { loggedIn = true; resume() }
-                .onFailure { message = it.message ?: "Přihlášení selhalo" }
+                // In the log so a login over adb can be checked with the TV screen off (never the password).
+                .onSuccess { Log.i("Kukatko", "login ok"); loggedIn = true; if (onScreen()) resume() }
+                .onFailure { Log.i("Kukatko", "login failed: ${it.message}"); message = it.message ?: "Přihlášení selhalo" }
             busy = false
         }
     }
