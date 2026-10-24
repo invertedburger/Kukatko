@@ -84,8 +84,8 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Same look as the simplified, elderly-friendly Jellyfin fork (personal/jellyfin-androidtv-simple,
- * SimpleComponents.kt): large type, yellow focus with black text, a slight grow and a pulsing white
+ * Same look as the simplified, elderly-friendly Jellyfin fork "Dželi Beli"
+ * (SimpleComponents.kt): large type, yellow focus with black text, a slight grow and a pulsing white
  * frame on the focused row, and key hints on screen.
  */
 private object Look {

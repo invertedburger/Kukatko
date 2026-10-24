@@ -1,18 +1,18 @@
 # Kukátko
 
-**A small, fast Android TV app for Oneplay (the former O2 TV), made so that a grandmother can use it.**
+**A small, fast Android TV app for Oneplay (the former O2 TV), made to be easy for an elderly viewer.**
 
 Opens straight into the channel you watched last. Big buttons, no menus to get lost in. Up and
 down change the channel, OK shows the list, and the programmes you watch most turn up on top by
 themselves.
 
-> **Alpha.** It runs daily on one TV (Philips Google TV), the API is unofficial and can change
+> **Alpha.** It runs daily on a Google TV, the API is unofficial and can change
 > without notice. Expect rough edges. Feedback and issues are welcome.
 
 *Česky v kostce: odlehčená aplikace pro Android TV, která přehrává Oneplay (dřív O2 TV) z vašeho
 vlastního předplatného. Startuje rovnou na posledním kanálu, ovládá se šipkami, OK a CH+/CH−,
 umí archiv 7 dní, tlačítko „Od začátku“, hledání pořadu bez klávesnice a sama si pamatuje
-oblíbené kanály a pořady. Určená pro babičku. Není oficiální, s Oneplay ani O2 nemá nic společného.*
+oblíbené kanály a pořady. Je určená pro starší diváky. Není oficiální, s Oneplay ani O2 nemá nic společného.*
 
 ## What it does
 

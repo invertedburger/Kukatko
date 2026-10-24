@@ -54,8 +54,8 @@ channel rows look the same next to the guide. **Still to do:** the items marked 
 
 ## 3. Control and state for Home Assistant / voice / AI
 
-To be prepared in a separate chat. Voice commands through HA ("pusť Ulici") are the most natural
-search for her, so the `/search` endpoint below should reuse `OneplayApi.search`.
+Voice commands through HA ("pusť Ulici") are the most natural way for an elderly viewer to
+search, so the `/search` endpoint below should reuse `OneplayApi.search`.
 
 Not started. Build after the TV test, in this order:
 
