@@ -643,7 +643,7 @@ private fun GuidePanel(state: TvState, channel: Channel, modifier: Modifier) {
     ) {
         Column(Modifier.padding(start = 20.dp, top = 16.dp, end = 20.dp, bottom = 8.dp)) {
             Text(channel.name, fontSize = Look.Big, fontWeight = FontWeight.Bold, color = Look.Text)
-            Text("Archiv – pořady až 7 dní zpět", fontSize = Look.Body, color = Look.Dim)
+            Text("Archiv: pořady až 7 dní zpět", fontSize = Look.Body, color = Look.Dim)
         }
         when {
             items == null -> Text("Načítám program…", fontSize = Look.Name, color = Look.Text, modifier = Modifier.padding(20.dp).weight(1f))
@@ -827,7 +827,7 @@ private fun ArchiveBanner(channel: Channel, programme: Programme, player: ExoPla
         Column(Modifier.weight(1f)) {
             val onAir = programme.end > System.currentTimeMillis() / 1000
             Text("${if (onAir) "OD ZAČÁTKU" else "ZE ZÁZNAMU"} · ${channel.name}$date", fontSize = Look.Body, fontWeight = FontWeight.Bold, color = Look.Focus)
-            Text((if (paused) "⏸  POZASTAVENO – " else "") + programme.title, fontSize = Look.Big, fontWeight = FontWeight.Bold, color = Look.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text((if (paused) "⏸  POZASTAVENO: " else "") + programme.title, fontSize = Look.Big, fontWeight = FontWeight.Bold, color = Look.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(clock(position), fontSize = Look.Body, color = Look.Text)
                 Box(Modifier.weight(1f).padding(horizontal = 16.dp)) { Progress(if (duration > 0) position.toFloat() / duration else 0f) }

@@ -14,6 +14,19 @@ vlastního předplatného. Startuje rovnou na posledním kanálu, ovládá se š
 umí archiv 7 dní, tlačítko „Od začátku“, hledání pořadu bez klávesnice a sama si pamatuje
 oblíbené kanály a pořady. Je určená pro starší diváky. Není oficiální, s Oneplay ani O2 nemá nic společného.*
 
+## Screenshots
+
+<p>
+  <img src="docs/screenshots/channels.png" width="49%" alt="Channel list with what is on now">
+  <img src="docs/screenshots/channel-buttons.png" width="49%" alt="Od začátku and Zmeškané pořady buttons on a channel">
+</p>
+<p>
+  <img src="docs/screenshots/search.png" width="49%" alt="Search for a show with big letters, results from the archive">
+  <img src="docs/screenshots/archive.png" width="49%" alt="Archive of a channel for the last 7 days">
+</p>
+
+*Left to right: channel list, the buttons of a channel, search without a keyboard, 7 day archive.*
+
 ## What it does
 
 - **Instant start** on the last channel, quick zapping with Up / Down or CH+ / CH−.
